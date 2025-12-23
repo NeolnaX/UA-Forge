@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
-PKG_NAME:=UAForge
-PKG_VERSION:=0.1.0
+PKG_NAME:=uaforge
+PKG_VERSION:=0.1.1
 PKG_RELEASE:=1
 
 PKG_MAINTAINER:=Zesuy <hongri580@gmail.com>
@@ -17,17 +17,17 @@ include $(TOPDIR)/feeds/packages/lang/rust/rust-package.mk
 MAKE_PATH:=.
 RUST_PKG_LOCKED:=1
 
-define Package/UAForge
+define Package/uaforge
 	SECTION:=net
 	CATEGORY:=Network
 	SUBMENU:=Web Servers/Proxies
 	TITLE:=UAForge - User-Agent Proxy
-	URL:=https://github.com/Zesuy/UAForge
+	URL:=https://github.com/NeolnaX/UA-Forge
 	DEPENDS:=$(RUST_ARCH_DEPENDS) +luci-compat
 	CONFLICTS:=UAmask UAmask-rs UAmask-ipt ua3f-tproxy ua3f-tproxy-ipt
 endef
 
-define Package/UAForge/description
+define Package/uaforge/description
 	A transparent proxy for modifying HTTP User-Agent (Rust implementation).
 	Includes LuCI UI and init script for OpenWrt, and supports nftables/iptables set bypass.
 endef
@@ -45,11 +45,11 @@ endef
 # Prefer vendored dependencies; cargo should not need network.
 CARGO_PKG_ARGS += --offline
 
-define Package/UAForge/conffiles
+define Package/uaforge/conffiles
 /etc/config/uaforge
 endef
 
-define Package/UAForge/install
+define Package/uaforge/install
 	$(INSTALL_DIR) $(1)/usr/bin/
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/uaforge $(1)/usr/bin/uaforge
 
@@ -66,4 +66,4 @@ define Package/UAForge/install
 	$(INSTALL_CONF) ./files/luci/controller.lua $(1)/usr/lib/lua/luci/controller/uaforge.lua
 endef
 
-$(eval $(call BuildPackage,UAForge))
+$(eval $(call BuildPackage,uaforge))
