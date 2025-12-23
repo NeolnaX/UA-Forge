@@ -1,7 +1,7 @@
-config 'uaforge' 'enabled'
+config 'uaforge' 'main'
+	# 启用开关
 	option enabled '0'
 
-config 'uaforge' 'main'
 	# 基础配置
 	option port '12032'
 	option ua 'FFF'
