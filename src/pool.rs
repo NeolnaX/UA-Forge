@@ -10,12 +10,14 @@ use hyper_util::rt::TokioIo;
 /// HTTP 连接池
 pub struct ConnectionPool {
     pools: Arc<Mutex<HashMap<SocketAddr, Vec<SendRequest<Incoming>>>>>,
+    max_idle_per_host: usize,
 }
 
 impl ConnectionPool {
-    pub fn new(_max_idle_per_host: usize) -> Self {
+    pub fn new(max_idle_per_host: usize) -> Self {
         Self {
             pools: Arc::new(Mutex::new(HashMap::new())),
+            max_idle_per_host: max_idle_per_host.max(1), // 至少保留 1 个连接
         }
     }
 
@@ -58,5 +60,22 @@ impl ConnectionPool {
         });
 
         Ok(sender)
+    }
+
+    /// 回收连接到池中（带大小限制）
+    pub async fn recycle(&self, addr: SocketAddr, sender: SendRequest<Incoming>) {
+        // 检查连接是否仍然有效
+        if sender.is_closed() {
+            return;
+        }
+
+        let mut pools = self.pools.lock().await;
+        let pool = pools.entry(addr).or_insert_with(Vec::new);
+
+        // 只有在未达到上限时才回收连接
+        if pool.len() < self.max_idle_per_host {
+            pool.push(sender);
+        }
+        // 超过上限的连接会被自动丢弃
     }
 }

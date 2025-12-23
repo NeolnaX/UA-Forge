@@ -23,6 +23,24 @@ impl HttpHandler {
         Self { config, stats, fw, cache }
     }
 
+    /// 从缓存中获取值
+    fn cache_get(&self, key: &str) -> Option<String> {
+        if self.config.cache_size == 0 {
+            return None;
+        }
+        self.cache.lock().ok()?.get(key).cloned()
+    }
+
+    /// 向缓存中写入值
+    fn cache_put(&self, key: String, value: String) {
+        if self.config.cache_size == 0 {
+            return;
+        }
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.put(key, value);
+        }
+    }
+
     /// 修改 HTTP 请求的 User-Agent（流式版本）
     pub async fn modify_request(
         &self,
@@ -48,23 +66,10 @@ impl HttpHandler {
         // 1. 检查防火墙 UA 白名单（最高优先级）
         if self.fw.enabled() && !self.config.firewall.fw_ua_whitelist.is_empty() {
             // 先检查缓存，避免重复添加防火墙规则
-            let is_fw_whitelisted = if self.config.cache_size > 0 {
-                if let Ok(mut cache) = self.cache.lock() {
-                    if let Some(cached) = cache.get(&original_ua) {
-                        cached == "FW_WHITELIST"
-                    } else {
-                        false
-                    }
-                } else {
-                    false
+            if let Some(cached) = self.cache_get(&original_ua) {
+                if cached == "FW_WHITELIST" {
+                    return Ok(req);
                 }
-            } else {
-                false
-            };
-
-            if is_fw_whitelisted {
-                // 缓存命中，直接返回
-                return Ok(req);
             }
 
             // 检查是否在白名单中
@@ -79,11 +84,7 @@ impl HttpHandler {
                     self.fw.add(dest_ip, dest_port, self.config.firewall.fw_timeout);
 
                     // 缓存防火墙白名单状态
-                    if self.config.cache_size > 0 {
-                        if let Ok(mut cache) = self.cache.lock() {
-                            cache.put(original_ua.clone(), "FW_WHITELIST".to_string());
-                        }
-                    }
+                    self.cache_put(original_ua.clone(), "FW_WHITELIST".to_string());
 
                     // 如果启用了 fw_drop，断开连接强制重连
                     if self.config.firewall.fw_drop {
@@ -100,25 +101,17 @@ impl HttpHandler {
         }
 
         // 检查缓存：缓存记录是否需要修改
-        let should_modify = if self.config.cache_size > 0 {
-            if let Ok(mut cache) = self.cache.lock() {
-                if let Some(cached_result) = cache.get(&original_ua) {
-                    // 缓存命中
-                    if cached_result == "PASS" {
-                        self.stats.inc_cache_pass();
-                        false
-                    } else {
-                        self.stats.inc_cache_modify();
-                        true
-                    }
-                } else {
-                    // 缓存未命中
-                    true
-                }
+        let should_modify = if let Some(cached_result) = self.cache_get(&original_ua) {
+            // 缓存命中
+            if cached_result == "PASS" {
+                self.stats.inc_cache_pass();
+                false
             } else {
+                self.stats.inc_cache_modify();
                 true
             }
         } else {
+            // 缓存未命中
             true
         };
 
@@ -133,11 +126,7 @@ impl HttpHandler {
             self.stats.inc_modified();
 
             // 更新缓存：记录需要修改
-            if self.config.cache_size > 0 {
-                if let Ok(mut cache) = self.cache.lock() {
-                    cache.put(original_ua.clone(), "MODIFY".to_string());
-                }
-            }
+            self.cache_put(original_ua.clone(), "MODIFY".to_string());
 
             logger::log(
                 logger::Level::Debug,
@@ -145,11 +134,7 @@ impl HttpHandler {
             );
         } else {
             // 不需要修改，更新缓存记录
-            if self.config.cache_size > 0 {
-                if let Ok(mut cache) = self.cache.lock() {
-                    cache.put(original_ua.clone(), "PASS".to_string());
-                }
-            }
+            self.cache_put(original_ua.clone(), "PASS".to_string());
         }
 
         Ok(req)
