@@ -13,7 +13,7 @@ PKG_BUILD_PARALLEL:=1
 PKG_BUILD_FLAGS:=no-mips16
 
 include $(INCLUDE_DIR)/package.mk
-include $(TOPDIR)/feeds/packages/lang/rust/rust-package.mk
+include ../../feeds/packages/lang/rust/rust-package.mk
 
 MAKE_PATH:=.
 RUST_PKG_LOCKED:=1
