@@ -51,7 +51,7 @@ pub struct CliArgs {
     #[arg(long, default_value = "8080", help = "Port to listen on")]
     pub port: u16,
 
-    #[arg(long, default_value = "info", help = "Log level (debug/info/warn/error)")]
+    #[arg(long = "log-level", default_value = "info", help = "Log level (debug/info/warn/error)")]
     pub loglevel: String,
 
     #[arg(short = 'v', long, help = "Show version")]
