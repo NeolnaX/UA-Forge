@@ -16,17 +16,40 @@ jobs:
     strategy:
       matrix:
         include:
+          # x86 架构 - 软路由
           - arch: x86_64
             sdk_url: https://downloads.immortalwrt.org/releases/23.05.4/targets/x86/64/immortalwrt-sdk-23.05.4-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz
             sdk_name: immortalwrt-sdk-23.05.4-x86-64_gcc-12.3.0_musl.Linux-x86_64
 
+          # MIPS 架构 - MT7621 (小米、红米等)
           - arch: mipsel_24kc
             sdk_url: https://downloads.immortalwrt.org/releases/23.05.4/targets/ramips/mt7621/immortalwrt-sdk-23.05.4-ramips-mt7621_gcc-12.3.0_musl.Linux-x86_64.tar.xz
             sdk_name: immortalwrt-sdk-23.05.4-ramips-mt7621_gcc-12.3.0_musl.Linux-x86_64
 
+          # ARM64 架构 - 树莓派 3B+/4B
           - arch: aarch64_cortex-a53
             sdk_url: https://downloads.immortalwrt.org/releases/23.05.4/targets/bcm27xx/bcm2710/immortalwrt-sdk-23.05.4-bcm27xx-bcm2710_gcc-12.3.0_musl.Linux-x86_64.tar.xz
             sdk_name: immortalwrt-sdk-23.05.4-bcm27xx-bcm2710_gcc-12.3.0_musl.Linux-x86_64
+
+          # ARM64 架构 - 树莓派 4B/CM4
+          - arch: aarch64_cortex-a72
+            sdk_url: https://downloads.immortalwrt.org/releases/23.05.4/targets/bcm27xx/bcm2711/immortalwrt-sdk-23.05.4-bcm27xx-bcm2711_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+            sdk_name: immortalwrt-sdk-23.05.4-bcm27xx-bcm2711_gcc-12.3.0_musl.Linux-x86_64
+
+          # ARM64 架构 - 斐讯 N1、贝壳云等
+          - arch: aarch64_generic
+            sdk_url: https://downloads.immortalwrt.org/releases/23.05.4/targets/armsr/armv8/immortalwrt-sdk-23.05.4-armsr-armv8_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+            sdk_name: immortalwrt-sdk-23.05.4-armsr-armv8_gcc-12.3.0_musl.Linux-x86_64
+
+          # ARM Cortex-A9 - 友善 NanoPi R2S/R4S
+          - arch: arm_cortex-a9
+            sdk_url: https://downloads.immortalwrt.org/releases/23.05.4/targets/rockchip/armv8/immortalwrt-sdk-23.05.4-rockchip-armv8_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+            sdk_name: immortalwrt-sdk-23.05.4-rockchip-armv8_gcc-12.3.0_musl.Linux-x86_64
+
+          # MediaTek MT7620 - 极路由、优酷路由宝等
+          - arch: mipsel_24kc_mt7620
+            sdk_url: https://downloads.immortalwrt.org/releases/23.05.4/targets/ramips/mt7620/immortalwrt-sdk-23.05.4-ramips-mt7620_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+            sdk_name: immortalwrt-sdk-23.05.4-ramips-mt7620_gcc-12.3.0_musl.Linux-x86_64
 
     name: Build ${{ matrix.arch }}
     runs-on: ubuntu-latest
