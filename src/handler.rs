@@ -28,7 +28,7 @@ impl HttpHandler {
         if self.config.cache_size == 0 {
             return None;
         }
-        self.cache.lock().ok()?.get(key).cloned()
+        self.cache.lock().ok()?.get(key).map(|s| s.clone())
     }
 
     /// 向缓存中写入值
