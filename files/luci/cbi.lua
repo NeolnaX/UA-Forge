@@ -13,8 +13,8 @@ local function is_running()
 end
 
 local function get_version()
-    local out = luci_sys.exec(BIN_PATH .. " -v 2>/dev/null")
-    return out:match("version:%s+([%w%._-]+)") or "unknown"
+    local out = luci_sys.exec(BIN_PATH .. " --version 2>/dev/null")
+    return out:match("version:%s+([%w%._-]+)") or out:match("([%d%.]+)") or "unknown"
 end
 
 local function get_stats()
@@ -48,9 +48,9 @@ uaforge = Map("uaforge",
         display: none !important;
     }
     </style>
-        <a href="https://github.com/Zesuy/UAForge" target="_blank">服务：]] .. SERVICE_NAME .. [[ | 版本：]] .. get_version() .. [[</a>
+        <a href="https://github.com/NeolnaX/UA-Forge" target="_blank">服务：]] .. SERVICE_NAME .. [[ | 版本：]] .. get_version() .. [[</a>
         <br>
-        用于修改 User-Agent 的透明代理，使用 REDIRECT 技术实现（Rust 实现）。
+        用于修改 User-Agent 的透明代理，使用 TPROXY 技术实现（Rust 异步实现）。
         <br>
     ]]
 )
@@ -115,7 +115,7 @@ operating_profile = main:taboption("general", ListValue, "operating_profile", "�
     "<b>Medium：</b> 适合 256MB-512MB 路由器，支持并发 500 连接<br>"..
     "<b>High：</b> 适合软路由或 1GB 以上路由器，支持并发 1000 连接<br>"..
     "<b>注意：</b> 超过限制的连接将等待，这可以用来防止突发的连接压垮路由器<br>"..
-    "Rust 版本使用线程池管理并发，内存占用更低且性能更稳定。"
+    "Rust 版本使用异步架构（tokio），内存占用更低且性能更稳定。"
 )
 operating_profile:value("Low", "低(Low)")
 operating_profile:value("Medium", "中(Medium)")
@@ -129,11 +129,11 @@ buffer_size.datatype = "uinteger"
 buffer_size.default = "8192"
 buffer_size.description = "每个连接使用的缓冲区大小，单位为字节。较大的缓冲区有助于提升吞吐性能。"
 
-pool_size = main:taboption("general", Value, "pool_size", "工作线程池大小")
+pool_size = main:taboption("general", Value, "pool_size", "连接池大小")
 pool_size:depends("operating_profile", "custom")
 pool_size.datatype = "uinteger"
 pool_size.default = "64"
-pool_size.description = "工作线程池的大小。Rust 版本使用线程池管理并发，建议设置为 64-256 之间。<br>最大 RAM 估计：pool_size*(2*buffer_size) + cache_ram。"
+pool_size.description = "HTTP 连接池的大小，用于复用 TCP 连接。建议设置为 64-256 之间。"
 
 cache_size = main:taboption("general", Value, "cache_size", "LRU 缓存大小")
 cache_size:depends("operating_profile", "custom")
@@ -189,7 +189,7 @@ iface.description = "指定监听的 LAN 口。"
 
 enable_firewall_set = main:taboption("network", Flag, "enable_firewall_set", "启用流量卸载")
 enable_firewall_set.default = 0
-enable_firewall_set.description = "启用后，将动态绕过特定目标 IP 和端口的组合，不会再进入 UAmask ，这将大幅提升性能，实现内核级优化。<br>如果您使用 iptables，请确保安装 ipset 软件包。"
+enable_firewall_set.description = "启用后，将动态绕过特定目标 IP 和端口的组合，不会再进入 UAForge，这将大幅提升性能，实现内核级优化。<br>如果您使用 iptables，请确保安装 ipset 软件包。"
 
 Firewall_ua_bypass=main:taboption("network", Flag, "Firewall_ua_bypass", "绕过非http流量")
 Firewall_ua_bypass:depends("enable_firewall_set", "1")
@@ -198,11 +198,11 @@ Firewall_ua_bypass.description = "启用后，绕过使用非 HTTP 流量的 IP 
 Firewall_ua_whitelist= main:taboption("network", Value, "Firewall_ua_whitelist", "UA 关键词白名单")
 Firewall_ua_whitelist:depends("enable_firewall_set", "1")
 Firewall_ua_whitelist.placeholder = ""
-Firewall_ua_whitelist.description = "指定不通过 UAmask 代理的 UA 关键词（流量卸载），用逗号分隔（如：Valve/Steam,360pcdn）。"
+Firewall_ua_whitelist.description = "指定不通过 UAForge 代理的 UA 关键词（流量卸载），用逗号分隔（如：Valve/Steam,360pcdn）。"
 
 Firewall_drop_on_match=main:taboption("network", Flag, "Firewall_drop_on_match", "匹配时断开连接")
 Firewall_drop_on_match:depends("enable_firewall_set", "1")
-Firewall_drop_on_match.description = "启用后，当流量匹配 UA 白名单规则时，将直接断开连接，强制其重新建立连接绕过 UAmask。"
+Firewall_drop_on_match.description = "启用后，当流量匹配 UA 白名单规则时，将直接断开连接，强制其重新建立连接绕过 UAForge。"
 
 proxy_host = main:taboption("network", Flag, "proxy_host", "代理主机流量")
 proxy_host.description = "启用后将代理主机自身的流量。如果需要尽量避免和其他代理冲突，请禁用此选项。"
@@ -255,7 +255,7 @@ log_level:value("warn", "警告（warn）")
 log_level:value("error", "错误（error）")
 
 log_file = main:taboption("softlog", Value, "log_file", "应用日志路径")
-log_file.placeholder = "/tmp/UAmask/UAmask.log"
+log_file.placeholder = "/tmp/uaforge/uaforge.log"
 log_file.description = "指定 Rust 程序运行时日志的输出文件路径。留空将禁用文件日志。"
 
 softlog = main:taboption("softlog", TextValue, "log_display","")
