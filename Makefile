@@ -4,18 +4,23 @@ PKG_NAME:=uaforge
 PKG_VERSION:=0.1.1
 PKG_RELEASE:=1
 
-PKG_MAINTAINER:=Zesuy <hongri580@gmail.com>
+PKG_MAINTAINER:=NeolnaX <NeolnaX@outlook.com>
 PKG_LICENSE:=GPL-3.0-only
 PKG_LICENSE_FILES:=LICENSE
 
 PKG_BUILD_DEPENDS:=rust/host
 PKG_BUILD_PARALLEL:=1
+PKG_BUILD_FLAGS:=no-mips16
 
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/rust/rust-package.mk
 
 MAKE_PATH:=.
 RUST_PKG_LOCKED:=1
+
+# 注入版本号到 Rust 编译
+CARGO_VARS += \
+	CARGO_PKG_VERSION=$(PKG_VERSION)
 
 define Package/uaforge
 	SECTION:=net

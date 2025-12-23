@@ -14,7 +14,8 @@ use std::time::Duration;
 
 use config::Config;
 
-const VERSION: &str = "0.1.1";
+// 从 Cargo.toml 或环境变量获取版本号
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[tokio::main]
 async fn main() -> ExitCode {
