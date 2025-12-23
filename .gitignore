@@ -1,0 +1,41 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
+
+# Debug/test scripts (keep in repo for reference)
+# Uncomment if you don't want these in git:
+# debug-luci-startup.sh
+# diagnose.sh
+# test-luci-startup.sh
+
+# Documentation (keep these)
+# *.md
+
+# Vendor directory (too large for git)
+/vendor/
+
+# Build artifacts
+*.o
+*.so
+*.a

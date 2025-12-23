@@ -1,0 +1,41 @@
+config 'uaforge' 'enabled'
+	option enabled '0'
+
+config 'uaforge' 'main'
+	# 基础配置
+	option port '12032'
+	option ua 'FFF'
+	option log_level 'info'
+	option log_file '/tmp/uaforge/uaforge.log'
+	option whitelist ''
+
+	# 性能预设
+	option operating_profile 'Medium'
+	option cache_size '3000'
+	option buffer_size '8192'
+	option pool_size '500'
+
+	# 匹配模式
+	option match_mode 'keywords'
+	option keywords 'iPhone,iPad,Android,Macintosh,Windows'
+	option ua_regex '(iPhone|iPad|Android|Macintosh|Windows|Linux|Apple|Mac OS X|Mobile)'
+	option replace_method 'full'
+
+	# 网络配置
+	option iface 'br-lan'
+	option proxy_host '0'
+	option bypass_gid '65533'
+	option bypass_ports '22 443'
+	option bypass_ips '172.16.0.0/12 192.168.0.0/16 127.0.0.0/8 169.254.0.0/16'
+
+	# 防火墙配置
+	option enable_firewall_set '0'
+	option Firewall_ua_bypass '0'
+	option Firewall_ua_whitelist ''
+	option Firewall_drop_on_match '0'
+
+	# 防火墙高级设置
+	option firewall_advanced_settings '0'
+	option firewall_nonhttp_threshold '5'
+	option firewall_timeout '28800'
+	option firewall_decision_delay '60'

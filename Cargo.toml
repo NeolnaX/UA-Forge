@@ -1,0 +1,27 @@
+[package]
+name = "uaforge"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "uaforge"
+path = "src/main.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[dependencies]
+# 异步运行时
+tokio = { version = "1.42", features = ["full"] }
+# HTTP 库
+hyper = { version = "1.5", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+http-body-util = "0.1"
+bytes = "1.11"
+# 原有依赖
+regex = "1.11.1"
+lru = "0.12"
+clap = { version = "4.5", features = ["derive"] }
+scopeguard = "1.2"

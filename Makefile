@@ -1,0 +1,69 @@
+include $(TOPDIR)/rules.mk
+
+PKG_NAME:=UAForge
+PKG_VERSION:=0.1.0
+PKG_RELEASE:=1
+
+PKG_MAINTAINER:=Zesuy <hongri580@gmail.com>
+PKG_LICENSE:=GPL-3.0-only
+PKG_LICENSE_FILES:=LICENSE
+
+PKG_BUILD_DEPENDS:=rust/host
+PKG_BUILD_PARALLEL:=1
+
+include $(INCLUDE_DIR)/package.mk
+include $(TOPDIR)/feeds/packages/lang/rust/rust-package.mk
+
+MAKE_PATH:=.
+RUST_PKG_LOCKED:=1
+
+define Package/UAForge
+	SECTION:=net
+	CATEGORY:=Network
+	SUBMENU:=Web Servers/Proxies
+	TITLE:=UAForge - User-Agent Proxy
+	URL:=https://github.com/Zesuy/UAForge
+	DEPENDS:=$(RUST_ARCH_DEPENDS) +luci-compat
+	CONFLICTS:=UAmask UAmask-rs UAmask-ipt ua3f-tproxy ua3f-tproxy-ipt
+endef
+
+define Package/UAForge/description
+	A transparent proxy for modifying HTTP User-Agent (Rust implementation).
+	Includes LuCI UI and init script for OpenWrt, and supports nftables/iptables set bypass.
+endef
+
+define Build/Prepare
+	$(INSTALL_DIR) $(PKG_BUILD_DIR)
+	$(CP) $(CURDIR)/src $(PKG_BUILD_DIR)/
+	$(CP) $(CURDIR)/Cargo.toml $(PKG_BUILD_DIR)/
+	$(CP) $(CURDIR)/Cargo.lock $(PKG_BUILD_DIR)/
+	$(CP) $(CURDIR)/vendor $(PKG_BUILD_DIR)/
+	$(CP) $(CURDIR)/.cargo $(PKG_BUILD_DIR)/
+	$(CP) $(CURDIR)/LICENSE $(PKG_BUILD_DIR)/
+endef
+
+# Prefer vendored dependencies; cargo should not need network.
+CARGO_PKG_ARGS += --offline
+
+define Package/UAForge/conffiles
+/etc/config/uaforge
+endef
+
+define Package/UAForge/install
+	$(INSTALL_DIR) $(1)/usr/bin/
+	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/uaforge $(1)/usr/bin/uaforge
+
+	$(INSTALL_DIR) $(1)/etc/init.d/
+	$(INSTALL_BIN) ./files/uaforge.init $(1)/etc/init.d/uaforge
+
+	$(INSTALL_DIR) $(1)/etc/config/
+	$(INSTALL_CONF) ./files/uaforge.uci $(1)/etc/config/uaforge
+
+	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/model/cbi/
+	$(INSTALL_CONF) ./files/luci/cbi.lua $(1)/usr/lib/lua/luci/model/cbi/uaforge.lua
+
+	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/controller/
+	$(INSTALL_CONF) ./files/luci/controller.lua $(1)/usr/lib/lua/luci/controller/uaforge.lua
+endef
+
+$(eval $(call BuildPackage,UAForge))
