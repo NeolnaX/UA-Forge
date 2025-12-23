@@ -32,6 +32,9 @@ jobs:
           gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev \
           python3-setuptools rsync unzip zlib1g-dev file wget
 
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Clone ImmortalWrt
         run: |
           git clone --depth 1 --branch v23.05.4 https://github.com/immortalwrt/immortalwrt.git
@@ -43,7 +46,20 @@ jobs:
         run: |
           mkdir -p immortalwrt/package/uaforge
           cp -r src Cargo.toml Makefile LICENSE files immortalwrt/package/uaforge/
-          cp -r vendor .cargo immortalwrt/package/uaforge/
+
+          # 生成 vendor 目录（离线编译依赖）
+          cd immortalwrt/package/uaforge
+          cargo vendor > /dev/null 2>&1
+
+          # 创建 .cargo/config.toml
+          mkdir -p .cargo
+          cat > .cargo/config.toml << 'EOL'
+          [source.crates-io]
+          replace-with = "vendored-sources"
+
+          [source.vendored-sources]
+          directory = "vendor"
+          EOL
 
       - name: Build for mipsel_24kc
         run: |
