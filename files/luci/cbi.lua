@@ -291,10 +291,10 @@ uaforge.on_after_commit = function(self)
     local enabled = uci:get(CONFIG_NAME, "enabled", "enabled")
     if enabled == "1" then
         -- Rust 版参数与防火墙规则变化较多，使用 restart 保证生效
-        luci.sys.call(INIT_SCRIPT .. " restart >/dev/null 2>&1")
+        luci.sys.call(INIT_SCRIPT .. " restart")
     else
         if is_running() then
-            luci.sys.call(INIT_SCRIPT .. " stop >/dev/null 2>&1")
+            luci.sys.call(INIT_SCRIPT .. " stop")
         end
     end
 end
