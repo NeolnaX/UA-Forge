@@ -1,4 +1,4 @@
-name: Build OpenWrt Packages
+name: Build and Release OpenWrt Packages
 
 on:
   push:
@@ -9,82 +9,62 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-env:
-  CARGO_TERM_COLOR: always
+permissions:
+  contents: write
 
 jobs:
-  build-ipk:
-    name: Build IPK for OpenWrt
+  build-openwrt:
+    name: Build ${{ matrix.arch }} on OpenWrt ${{ matrix.version }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        target:
-          - arch: mipsel_24kc
-            sdk: openwrt-23.05.2-ramips-mt7621-sdk-linux-x86_64
-            sdk_url: https://downloads.openwrt.org/releases/23.05.2/targets/ramips/mt7621/openwrt-23.05.2-ramips-mt7621-sdk-linux-x86_64.tar.xz
-          - arch: aarch64_cortex-a53
-            sdk: openwrt-23.05.2-bcm27xx-bcm2710-sdk-linux-x86_64
-            sdk_url: https://downloads.openwrt.org/releases/23.05.2/targets/bcm27xx/bcm2710/openwrt-23.05.2-bcm27xx-bcm2710-sdk-linux-x86_64.tar.xz
-          - arch: x86_64
-            sdk: openwrt-23.05.2-x86-64-sdk-linux-x86_64
-            sdk_url: https://downloads.openwrt.org/releases/23.05.2/targets/x86/64/openwrt-23.05.2-x86-64-sdk-linux-x86_64.tar.xz
+        arch:
+          - x86_64
+          - aarch64_generic
+          - aarch64_cortex-a53
+          - aarch64_cortex-a72
+          - arm_cortex-a7_neon-vfpv4
+          - arm_cortex-a9_vfpv3-d16
+          - mips_24kc
+          - mipsel_24kc
+        version:
+          - 23.05.5
+          - 24.10.0
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential ccache ecj fastjar file g++ gawk \
-          gettext git java-propose-classpath libelf-dev libncurses5-dev \
-          libncursesw5-dev libssl-dev python3 unzip wget \
-          python3-distutils python3-setuptools python3-dev rsync subversion \
-          swig time xsltproc zlib1g-dev
-
-      - name: Download OpenWrt SDK
-        run: |
-          wget ${{ matrix.target.sdk_url }}
-          tar xf ${{ matrix.target.sdk }}.tar.xz
-          mv ${{ matrix.target.sdk }} openwrt-sdk
-
-      - name: Copy package to SDK
-        run: |
-          mkdir -p openwrt-sdk/package/uaforge
-          cp -r src/ Cargo.toml Makefile LICENSE files/ openwrt-sdk/package/uaforge/
-
-      - name: Configure feeds
-        working-directory: openwrt-sdk
-        run: |
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-
       - name: Build package
-        working-directory: openwrt-sdk
-        run: |
-          make defconfig
-          make package/uaforge/compile V=s
+        uses: openwrt/gh-action-sdk@v8
+        env:
+          ARCH: ${{ matrix.arch }}-${{ matrix.version }}
+          FEEDNAME: uaforge_ci
+          PACKAGES: uaforge
 
-      - name: Find IPK files
-        id: find_ipk
-        working-directory: openwrt-sdk
+      - name: Rename packages with version suffix
         run: |
-          IPK_PATH=$(find bin/packages -name "uaforge*.ipk" | head -n 1)
-          echo "ipk_path=$IPK_PATH" >> $GITHUB_OUTPUT
-          echo "Found IPK: $IPK_PATH"
+          cd bin/packages/${{ matrix.arch }}/uaforge_ci/
+          for f in *.ipk; do
+            if [ -f "$f" ]; then
+              mv "$f" "${f/.ipk/-${{ matrix.arch }}-openwrt${{ matrix.version }}.ipk}"
+            fi
+          done
 
-      - name: Upload IPK artifact
+      - name: Upload IPK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: uaforge-ipk-${{ matrix.target.arch }}
-          path: openwrt-sdk/${{ steps.find_ipk.outputs.ipk_path }}
+          name: uaforge-${{ matrix.arch }}-${{ matrix.version }}
+          path: bin/packages/${{ matrix.arch }}/uaforge_ci/*.ipk
+          retention-days: 7
           if-no-files-found: error
 
   release:
     name: Create Release
-    needs: build-ipk
+    needs: build-openwrt
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.ref_type == 'tag'
 
     steps:
       - name: Checkout code
@@ -93,12 +73,19 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          pattern: uaforge-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*.ipk
+          name: UAForge ${{ steps.get_version.outputs.VERSION }}
+          files: dist/*.ipk
           draft: false
           prerelease: false
           generate_release_notes: true
