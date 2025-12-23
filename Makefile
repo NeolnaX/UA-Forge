@@ -43,9 +43,20 @@ define Build/Prepare
 	$(CP) $(CURDIR)/Cargo.toml $(PKG_BUILD_DIR)/
 	$(CP) $(CURDIR)/Cargo.lock $(PKG_BUILD_DIR)/
 	$(CP) $(CURDIR)/LICENSE $(PKG_BUILD_DIR)/
-	# vendor and .cargo will be copied by workflow if they exist
-	[ -d $(CURDIR)/vendor ] && $(CP) $(CURDIR)/vendor $(PKG_BUILD_DIR)/ || true
-	[ -d $(CURDIR)/.cargo ] && $(CP) $(CURDIR)/.cargo $(PKG_BUILD_DIR)/ || true
+
+	# Copy vendor if exists, otherwise generate it
+	if [ -d $(CURDIR)/vendor ]; then \
+		$(CP) $(CURDIR)/vendor $(PKG_BUILD_DIR)/; \
+		$(CP) $(CURDIR)/.cargo $(PKG_BUILD_DIR)/; \
+	else \
+		cd $(PKG_BUILD_DIR) && cargo vendor > /dev/null 2>&1; \
+		mkdir -p $(PKG_BUILD_DIR)/.cargo; \
+		echo '[source.crates-io]' > $(PKG_BUILD_DIR)/.cargo/config.toml; \
+		echo 'replace-with = "vendored-sources"' >> $(PKG_BUILD_DIR)/.cargo/config.toml; \
+		echo '' >> $(PKG_BUILD_DIR)/.cargo/config.toml; \
+		echo '[source.vendored-sources]' >> $(PKG_BUILD_DIR)/.cargo/config.toml; \
+		echo 'directory = "vendor"' >> $(PKG_BUILD_DIR)/.cargo/config.toml; \
+	fi
 endef
 
 # Prefer vendored dependencies; cargo should not need network.
