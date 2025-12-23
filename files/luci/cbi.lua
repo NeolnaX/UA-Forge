@@ -55,16 +55,15 @@ uaforge = Map("uaforge",
     ]]
 )
 
--- 只使用一个 main section
+-- 两个独立的 section
+enable = uaforge:section(NamedSection, "enabled", "uaforge", "状态")
 main = uaforge:section(NamedSection, "main", "uaforge", "设置")
 
 -- 启用开关
-enabled = main:option(Flag, "enabled", "启用")
-enabled.default = "0"
-enabled.rmempty = false
+enable:option(Flag, "enabled", "启用")
 
 -- 运行状态
-status = main:option(DummyValue, "status", "运行状态")
+status = enable:option(DummyValue, "status", "运行状态")
 status.rawhtml = true
 status.cfgvalue = function(self, section)
     if not is_running() then
@@ -75,7 +74,7 @@ status.cfgvalue = function(self, section)
 end
 
 -- 运行统计
-stats_display = main:option(DummyValue, "stats_display", "运行统计")
+stats_display = enable:option(DummyValue, "stats_display", "运行统计")
 stats_display.rawhtml = true
 stats_display.cfgvalue = function(self, section)
     if not is_running() then
@@ -289,7 +288,7 @@ end
 -- 使用 on_after_commit 确保在 UCI commit 之后再启动/重启服务
 
 uaforge.on_after_commit = function(self)
-    local enabled = uci:get(CONFIG_NAME, "main", "enabled")
+    local enabled = uci:get(CONFIG_NAME, "enabled", "enabled")
     if enabled == "1" then
         -- Rust 版参数与防火墙规则变化较多，使用 restart 保证生效
         luci.sys.call(INIT_SCRIPT .. " restart >/dev/null 2>&1")
