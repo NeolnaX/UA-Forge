@@ -48,19 +48,10 @@ define Build/Prepare
 	@if [ -d $(CURDIR)/vendor ]; then \
 		echo "Vendor directory found, copying..."; \
 		$(CP) $(CURDIR)/vendor $(PKG_BUILD_DIR)/; \
-		if [ -d $(CURDIR)/.cargo ]; then \
-			$(CP) $(CURDIR)/.cargo $(PKG_BUILD_DIR)/; \
-		else \
-			mkdir -p $(PKG_BUILD_DIR)/.cargo; \
-			echo '[source.crates-io]' > $(PKG_BUILD_DIR)/.cargo/config.toml; \
-			echo 'replace-with = "vendored-sources"' >> $(PKG_BUILD_DIR)/.cargo/config.toml; \
-			echo '' >> $(PKG_BUILD_DIR)/.cargo/config.toml; \
-			echo '[source.vendored-sources]' >> $(PKG_BUILD_DIR)/.cargo/config.toml; \
-			echo 'directory = "vendor"' >> $(PKG_BUILD_DIR)/.cargo/config.toml; \
-		fi; \
+		$(CP) $(CURDIR)/.cargo $(PKG_BUILD_DIR)/; \
 	else \
 		echo "Vendor directory not found, generating with cargo vendor..."; \
-		cd $(PKG_BUILD_DIR) && cargo vendor > /dev/null 2>&1; \
+		cd $(PKG_BUILD_DIR) && cargo vendor; \
 		mkdir -p $(PKG_BUILD_DIR)/.cargo; \
 		echo '[source.crates-io]' > $(PKG_BUILD_DIR)/.cargo/config.toml; \
 		echo 'replace-with = "vendored-sources"' >> $(PKG_BUILD_DIR)/.cargo/config.toml; \
