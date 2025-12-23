@@ -85,6 +85,15 @@ impl HttpHandler {
                         }
                     }
 
+                    // 如果启用了 fw_drop，断开连接强制重连
+                    if self.config.firewall.fw_drop {
+                        logger::log(
+                            logger::Level::Info,
+                            &format!("Dropping connection for {}:{} to force bypass", dest_ip, dest_port)
+                        );
+                        return Err("Connection dropped: UA whitelist match (will bypass on reconnect)".into());
+                    }
+
                     return Ok(req);
                 }
             }
