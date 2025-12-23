@@ -48,8 +48,8 @@ unset_firewall_rules_nft() {
 unset_firewall_nft() {
     logger -t "$NAME" "Removing firewall rules (nft)..."
     unset_firewall_rules_nft
-    nft delete chain inet fw4 UAmask_prerouting_before 2>/dev/null || true
-    nft delete chain inet fw4 UAmask_output_after 2>/dev/null || true
+    nft delete chain inet fw4 uaforge_prerouting_before 2>/dev/null || true
+    nft delete chain inet fw4 uaforge_output_after 2>/dev/null || true
     nft delete set inet fw4 ${IPSET_NAME} 2>/dev/null || true
     fw4 reload >/dev/null 2>&1
     logger -t "$NAME" "Firewall rules removed (nft)."
@@ -125,7 +125,7 @@ set_firewall_nft() {
 
     # 6. 动态写入 .nft 文件
 cat > "${NFT_PATH}" << EOF
-chain UAmask_prerouting_before {
+chain uaforge_prerouting_before {
     type nat hook prerouting priority dstnat - 1;
     
     $( [ "$enable_firewall_set" = "1" ] && echo "iifname $nft_ifaces ip protocol tcp ip daddr . tcp dport @$IPSET_NAME return" )
@@ -141,7 +141,7 @@ EOF
     if [ "$proxy_host" = "1" ]; then
 cat >> "${NFT_PATH}" << EOF
 
-chain UAmask_output_after {
+chain uaforge_output_after {
     type nat hook output priority -100;
 
     $( [ "$enable_firewall_set" = "1" ] && echo "ip protocol tcp ip daddr . tcp dport @$IPSET_NAME return" )
@@ -151,16 +151,16 @@ chain UAmask_output_after {
     $nft_ips_rule
     # 豁免端口
     $nft_ports_rule
-    # 豁免 UAmask 自己的流量
+    # 豁免 uaforge 自己的流量
     # 同时豁免 OpenClash 的流量 (GID 65534)，防止循环
     meta skgid != { $bypass_gid, 65534 } \\
     redirect to :$port
 }
 
 EOF
-        logger -t "$NAME" "proxy_host is enabled. Added UAmask_output_after chain."
+        logger -t "$NAME" "proxy_host is enabled. Added uaforge_output_after chain."
     else
-        logger -t "$NAME" "proxy_host is disabled. Skipping UAmask_output_after chain."
+        logger -t "$NAME" "proxy_host is disabled. Skipping uaforge_output_after chain."
     fi
     logger -t "$NAME" "Generated nftables rules at ${NFT_PATH}"
     # 7. 注册防火墙规则
@@ -169,8 +169,8 @@ EOF
     uci set firewall.${FW_CONFIG_NAME}.path="${NFT_PATH}"
     uci set firewall.${FW_CONFIG_NAME}.enabled="1"
     uci commit firewall
-    nft delete chain inet fw4 UAmask_prerouting_before 2>/dev/null || true
-    nft delete chain inet fw4 UAmask_output_after 2>/dev/null || true
+    nft delete chain inet fw4 uaforge_prerouting_before 2>/dev/null || true
+    nft delete chain inet fw4 uaforge_output_after 2>/dev/null || true
     fw4 reload >/dev/null 2>&1
     logger -t "$NAME" "Firewall rules applied (nft)."
 }
@@ -259,7 +259,7 @@ set_firewall_ipt() {
         if [ "$enable_firewall_set" = "1" ]; then
             $IPT -t nat -A $CHAIN_OUTPUT -m set --match-set "$IPSET_NAME" dst -j RETURN
         fi
-        # 豁免 UAmask 自己的流量 (通过 GID)
+        # 豁免 uaforge 自己的流量 (通过 GID)
         $IPT -t nat -A $CHAIN_OUTPUT -p tcp -m owner --gid-owner "$bypass_gid" -j RETURN
         # 同时豁免 OpenClash 的流量 (GID 65534)，防止循环
         $IPT -t nat -A $CHAIN_OUTPUT -p tcp -m owner --gid-owner "65534" -j RETURN
@@ -319,7 +319,7 @@ setup_group() {
     config_get bypass_gid "main" "bypass_gid" "65533"
 
     if ! grep -q ":$bypass_gid:" /etc/group; then
-        echo "UAmask:x:$bypass_gid:" >> /etc/group
+        echo "uaforge:x:$bypass_gid:" >> /etc/group
     fi
 }
 
@@ -345,7 +345,7 @@ start_service() {
     config_get port "main" "port" "12032"
     config_get ua "main" "ua" "FFF"
     config_get log_level "main" "log_level" "info"
-    config_get log_file "main" "log_file" "/tmp/UAmask/UAmask.log"
+    config_get log_file "main" "log_file" "/tmp/uaforge/uaforge.log"
     config_get whitelist "main" "whitelist" ""
 
     local firewall_ua_whitelist
@@ -364,8 +364,8 @@ start_service() {
     #  使用 append_param 逐个添加参数
     if [ "$proxy_host" = "1" ]; then
         # 仅当 proxy_host 启用时，才以特定组运行
-        procd_set_param group "UAmask"
-        logger -t "$NAME" "Running as group 'UAmask' for host proxying."
+        procd_set_param group "uaforge"
+        logger -t "$NAME" "Running as group 'uaforge' for host proxying."
     else
         logger -t "$NAME" "Running as default user (proxy_host is disabled)."
     fi
