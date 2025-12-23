@@ -1,10 +1,9 @@
-name: Build and Release OpenWrt Packages
+name: Build OpenWrt Packages
 
 on:
   push:
     branches: [ main ]
-    tags:
-      - 'v*'
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -12,109 +11,91 @@ on:
 permissions:
   contents: write
 
-env:
-  CACHE_VERSION: v1
-
 jobs:
-  build-openwrt:
-    name: Build ${{ matrix.arch }} on OpenWrt ${{ matrix.version }}
+  build:
+    name: Build All Architectures
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      max-parallel: 4  # 限制并发数，提高稳定性
-      matrix:
-        # 常用架构，每次都编译
-        arch:
-          - x86_64
-          - mipsel_24kc  # MT7621 最常用
-          - aarch64_cortex-a53  # 树莓派等
-        version:
-          - 23.05.5
-        # 其他架构仅在 tag 时编译
-        include:
-          - arch: aarch64_generic
-            version: 23.05.5
-            full_build: true
-          - arch: aarch64_cortex-a72
-            version: 23.05.5
-            full_build: true
-          - arch: arm_cortex-a7_neon-vfpv4
-            version: 23.05.5
-            full_build: true
-          - arch: mips_24kc
-            version: 23.05.5
-            full_build: true
 
     steps:
-      # 跳过非 tag 的完整编译
-      - name: Check if should skip
-        id: should_skip
-        run: |
-          if [[ "${{ matrix.full_build }}" == "true" && "${{ github.ref_type }}" != "tag" ]]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "Skipping ${{ matrix.arch }} (full_build only on tags)"
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-            echo "Building ${{ matrix.arch }}"
-          fi
-
       - name: Checkout code
-        if: steps.should_skip.outputs.skip != 'true'
         uses: actions/checkout@v4
 
-      - name: Build package
-        if: steps.should_skip.outputs.skip != 'true'
-        uses: openwrt/gh-action-sdk@v8
-        env:
-          ARCH: ${{ matrix.arch }}-${{ matrix.version }}
-          FEEDNAME: uaforge_ci
-          PACKAGES: uaforge
-
-      - name: Rename packages with version suffix
-        if: steps.should_skip.outputs.skip != 'true'
+      - name: Free up disk space
         run: |
-          cd bin/packages/${{ matrix.arch }}/uaforge_ci/
-          for f in *.ipk; do
-            if [ -f "$f" ]; then
-              mv "$f" "${f/.ipk/-${{ matrix.arch }}-openwrt${{ matrix.version }}.ipk}"
-            fi
-          done
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo apt-get clean
 
-      - name: Upload IPK artifacts
-        if: steps.should_skip.outputs.skip != 'true'
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison g++ gawk \
+          gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev \
+          python3-setuptools rsync unzip zlib1g-dev file wget
+
+      - name: Clone ImmortalWrt
+        run: |
+          git clone --depth 1 --branch v23.05.4 https://github.com/immortalwrt/immortalwrt.git
+          cd immortalwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Copy package to ImmortalWrt
+        run: |
+          mkdir -p immortalwrt/package/uaforge
+          cp -r src Cargo.toml Makefile LICENSE files immortalwrt/package/uaforge/
+          cp -r vendor .cargo immortalwrt/package/uaforge/
+
+      - name: Build for mipsel_24kc
+        run: |
+          cd immortalwrt
+          cat > .config << EOL
+          CONFIG_TARGET_ramips=y
+          CONFIG_TARGET_ramips_mt7621=y
+          CONFIG_PACKAGE_uaforge=m
+          EOL
+          make defconfig
+          make package/uaforge/compile -j$(nproc) V=s
+          mkdir -p ../artifacts
+          find bin -name "uaforge*.ipk" -exec cp {} ../artifacts/ \;
+
+      - name: Build for x86_64
+        run: |
+          cd immortalwrt
+          rm -f .config
+          cat > .config << EOL
+          CONFIG_TARGET_x86=y
+          CONFIG_TARGET_x86_64=y
+          CONFIG_PACKAGE_uaforge=m
+          EOL
+          make defconfig
+          make package/uaforge/compile -j$(nproc) V=s
+          find bin -name "uaforge*.ipk" -exec cp {} ../artifacts/ \;
+
+      - name: Build for aarch64_cortex-a53
+        run: |
+          cd immortalwrt
+          rm -f .config
+          cat > .config << EOL
+          CONFIG_TARGET_bcm27xx=y
+          CONFIG_TARGET_bcm27xx_bcm2710=y
+          CONFIG_PACKAGE_uaforge=m
+          EOL
+          make defconfig
+          make package/uaforge/compile -j$(nproc) V=s
+          find bin -name "uaforge*.ipk" -exec cp {} ../artifacts/ \;
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: uaforge-${{ matrix.arch }}-${{ matrix.version }}
-          path: bin/packages/${{ matrix.arch }}/uaforge_ci/*.ipk
+          name: uaforge-ipk-packages
+          path: artifacts/*.ipk
           retention-days: 7
-          if-no-files-found: error
-
-  release:
-    name: Create Release
-    needs: build-openwrt
-    runs-on: ubuntu-latest
-    if: github.ref_type == 'tag'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: uaforge-*
-          path: dist/
-          merge-multiple: true
-
-      - name: Get version from tag
-        id: get_version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
       - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          name: UAForge ${{ steps.get_version.outputs.VERSION }}
-          files: dist/*.ipk
+          files: artifacts/*.ipk
           draft: false
           prerelease: false
           generate_release_notes: true
