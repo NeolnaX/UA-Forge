@@ -101,7 +101,7 @@ jobs:
       - name: Prepare package
         run: |
           mkdir -p sdk/package/uaforge
-          cp -r src Cargo.toml Makefile LICENSE files sdk/package/uaforge/
+          cp -r src Cargo.toml Cargo.lock Makefile LICENSE files sdk/package/uaforge/
 
           # 生成 vendor 目录
           cd sdk/package/uaforge
