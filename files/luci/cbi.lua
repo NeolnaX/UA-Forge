@@ -59,7 +59,9 @@ uaforge = Map("uaforge",
 main = uaforge:section(NamedSection, "main", "uaforge", "设置")
 
 -- 启用开关
-main:option(Flag, "enabled", "启用")
+enabled = main:option(Flag, "enabled", "启用")
+enabled.default = "0"
+enabled.rmempty = false
 
 -- 运行状态
 status = main:option(DummyValue, "status", "运行状态")
