@@ -329,7 +329,7 @@ start_service() {
     config_load "$CONFIG_NAME"
 
     local enabled
-    config_get_bool enabled "enabled" "enabled" "0"
+    config_get_bool enabled "main" "enabled" "0"
     if [ "$enabled" -ne "1" ]; then
         return 1
     fi
