@@ -39,6 +39,10 @@ jobs:
         run: |
           git clone --depth 1 --branch v23.05.4 https://github.com/immortalwrt/immortalwrt.git
           cd immortalwrt
+
+          # 先编译工具链
+          make tools/install -j$(nproc) V=s
+
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
