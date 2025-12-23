@@ -12,31 +12,58 @@ on:
 permissions:
   contents: write
 
+env:
+  CACHE_VERSION: v1
+
 jobs:
   build-openwrt:
     name: Build ${{ matrix.arch }} on OpenWrt ${{ matrix.version }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      max-parallel: 4  # 限制并发数，提高稳定性
       matrix:
+        # 常用架构，每次都编译
         arch:
           - x86_64
-          - aarch64_generic
-          - aarch64_cortex-a53
-          - aarch64_cortex-a72
-          - arm_cortex-a7_neon-vfpv4
-          - arm_cortex-a9_vfpv3-d16
-          - mips_24kc
-          - mipsel_24kc
+          - mipsel_24kc  # MT7621 最常用
+          - aarch64_cortex-a53  # 树莓派等
         version:
           - 23.05.5
-          - 24.10.0
+        # 其他架构仅在 tag 时编译
+        include:
+          - arch: aarch64_generic
+            version: 23.05.5
+            full_build: true
+          - arch: aarch64_cortex-a72
+            version: 23.05.5
+            full_build: true
+          - arch: arm_cortex-a7_neon-vfpv4
+            version: 23.05.5
+            full_build: true
+          - arch: mips_24kc
+            version: 23.05.5
+            full_build: true
 
     steps:
+      # 跳过非 tag 的完整编译
+      - name: Check if should skip
+        id: should_skip
+        run: |
+          if [[ "${{ matrix.full_build }}" == "true" && "${{ github.ref_type }}" != "tag" ]]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Skipping ${{ matrix.arch }} (full_build only on tags)"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "Building ${{ matrix.arch }}"
+          fi
+
       - name: Checkout code
+        if: steps.should_skip.outputs.skip != 'true'
         uses: actions/checkout@v4
 
       - name: Build package
+        if: steps.should_skip.outputs.skip != 'true'
         uses: openwrt/gh-action-sdk@v8
         env:
           ARCH: ${{ matrix.arch }}-${{ matrix.version }}
@@ -44,6 +71,7 @@ jobs:
           PACKAGES: uaforge
 
       - name: Rename packages with version suffix
+        if: steps.should_skip.outputs.skip != 'true'
         run: |
           cd bin/packages/${{ matrix.arch }}/uaforge_ci/
           for f in *.ipk; do
@@ -53,6 +81,7 @@ jobs:
           done
 
       - name: Upload IPK artifacts
+        if: steps.should_skip.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: uaforge-${{ matrix.arch }}-${{ matrix.version }}
