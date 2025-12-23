@@ -146,6 +146,9 @@ async fn process_http(
                 .await
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
 
+            // 回收连接到连接池
+            pool.recycle(dest_addr, sender).await;
+
             Ok::<_, std::io::Error>(response)
         }
     });
