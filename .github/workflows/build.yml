@@ -16,40 +16,43 @@ jobs:
     strategy:
       matrix:
         include:
-          # x86 架构 - 软路由
+          # ========== x86 架构 ==========
           - arch: x86_64
             sdk_url: https://downloads.immortalwrt.org/releases/23.05.4/targets/x86/64/immortalwrt-sdk-23.05.4-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz
             sdk_name: immortalwrt-sdk-23.05.4-x86-64_gcc-12.3.0_musl.Linux-x86_64
+            description: 软路由、虚拟机
 
-          # MIPS 架构 - MT7621 (小米、红米等)
-          - arch: mipsel_24kc
-            sdk_url: https://downloads.immortalwrt.org/releases/23.05.4/targets/ramips/mt7621/immortalwrt-sdk-23.05.4-ramips-mt7621_gcc-12.3.0_musl.Linux-x86_64.tar.xz
-            sdk_name: immortalwrt-sdk-23.05.4-ramips-mt7621_gcc-12.3.0_musl.Linux-x86_64
-
-          # ARM64 架构 - 树莓派 3B+/4B
+          # ========== ARM 架构 ==========
           - arch: aarch64_cortex-a53
             sdk_url: https://downloads.immortalwrt.org/releases/23.05.4/targets/bcm27xx/bcm2710/immortalwrt-sdk-23.05.4-bcm27xx-bcm2710_gcc-12.3.0_musl.Linux-x86_64.tar.xz
             sdk_name: immortalwrt-sdk-23.05.4-bcm27xx-bcm2710_gcc-12.3.0_musl.Linux-x86_64
+            description: 树莓派 3B/3B+
 
-          # ARM64 架构 - 树莓派 4B/CM4
           - arch: aarch64_cortex-a72
             sdk_url: https://downloads.immortalwrt.org/releases/23.05.4/targets/bcm27xx/bcm2711/immortalwrt-sdk-23.05.4-bcm27xx-bcm2711_gcc-12.3.0_musl.Linux-x86_64.tar.xz
             sdk_name: immortalwrt-sdk-23.05.4-bcm27xx-bcm2711_gcc-12.3.0_musl.Linux-x86_64
+            description: 树莓派 4B/CM4
 
-          # ARM64 架构 - 斐讯 N1、贝壳云等
           - arch: aarch64_generic
             sdk_url: https://downloads.immortalwrt.org/releases/23.05.4/targets/armsr/armv8/immortalwrt-sdk-23.05.4-armsr-armv8_gcc-12.3.0_musl.Linux-x86_64.tar.xz
             sdk_name: immortalwrt-sdk-23.05.4-armsr-armv8_gcc-12.3.0_musl.Linux-x86_64
+            description: 斐讯N1、贝壳云、电视盒子
 
-          # ARM Cortex-A9 - 友善 NanoPi R2S/R4S
-          - arch: arm_cortex-a9
+          - arch: aarch64_cortex-a53_neon
             sdk_url: https://downloads.immortalwrt.org/releases/23.05.4/targets/rockchip/armv8/immortalwrt-sdk-23.05.4-rockchip-armv8_gcc-12.3.0_musl.Linux-x86_64.tar.xz
             sdk_name: immortalwrt-sdk-23.05.4-rockchip-armv8_gcc-12.3.0_musl.Linux-x86_64
+            description: NanoPi R2S/R4S、Orange Pi
 
-          # MediaTek MT7620 - 极路由、优酷路由宝等
+          # ========== MIPS 架构 ==========
+          - arch: mipsel_24kc_mt7621
+            sdk_url: https://downloads.immortalwrt.org/releases/23.05.4/targets/ramips/mt7621/immortalwrt-sdk-23.05.4-ramips-mt7621_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+            sdk_name: immortalwrt-sdk-23.05.4-ramips-mt7621_gcc-12.3.0_musl.Linux-x86_64
+            description: 小米路由器、红米路由器
+
           - arch: mipsel_24kc_mt7620
             sdk_url: https://downloads.immortalwrt.org/releases/23.05.4/targets/ramips/mt7620/immortalwrt-sdk-23.05.4-ramips-mt7620_gcc-12.3.0_musl.Linux-x86_64.tar.xz
             sdk_name: immortalwrt-sdk-23.05.4-ramips-mt7620_gcc-12.3.0_musl.Linux-x86_64
+            description: 极路由、优酷路由宝
 
     name: Build ${{ matrix.arch }}
     runs-on: ubuntu-latest
