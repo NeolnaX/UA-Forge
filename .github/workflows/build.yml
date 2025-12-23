@@ -114,6 +114,12 @@ jobs:
           directory = "vendor"
           EOL
 
+      - name: Configure SDK
+        run: |
+          cd sdk
+          echo "CONFIG_PACKAGE_uaforge=m" > .config
+          make defconfig
+
       - name: Build package
         run: |
           cd sdk
