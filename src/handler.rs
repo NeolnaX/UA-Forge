@@ -41,6 +41,31 @@ impl HttpHandler {
         }
     }
 
+    /// 判断 UA 是否需要修改（规则匹配）
+    fn should_modify_ua(&self, ua: &str) -> bool {
+        use crate::config::MatchMode;
+
+        match &self.config.match_mode {
+            MatchMode::Force => {
+                // 强制修改所有 UA
+                true
+            }
+            MatchMode::Keywords(keywords) => {
+                // 检查 UA 是否包含任意关键词
+                keywords.iter().any(|kw| ua.contains(kw.as_str()))
+            }
+            MatchMode::Regex { pattern, .. } => {
+                // 使用正则表达式匹配
+                // 注意：这里简化处理，实际应该缓存编译后的正则
+                if let Ok(re) = regex::Regex::new(pattern) {
+                    re.is_match(ua)
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
     /// 修改 HTTP 请求的 User-Agent（流式版本）
     pub async fn modify_request(
         &self,
@@ -111,8 +136,8 @@ impl HttpHandler {
                 true
             }
         } else {
-            // 缓存未命中
-            true
+            // 缓存未命中 - 执行规则匹配
+            self.should_modify_ua(&original_ua)
         };
 
         // 如果需要修改
