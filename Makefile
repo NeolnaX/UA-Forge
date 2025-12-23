@@ -42,9 +42,18 @@ define Build/Prepare
 	$(CP) $(CURDIR)/src $(PKG_BUILD_DIR)/
 	$(CP) $(CURDIR)/Cargo.toml $(PKG_BUILD_DIR)/
 	$(CP) $(CURDIR)/Cargo.lock $(PKG_BUILD_DIR)/
-	$(CP) $(CURDIR)/vendor $(PKG_BUILD_DIR)/
-	$(CP) $(CURDIR)/.cargo $(PKG_BUILD_DIR)/
 	$(CP) $(CURDIR)/LICENSE $(PKG_BUILD_DIR)/
+
+	# Generate vendor directory on-the-fly
+	cd $(PKG_BUILD_DIR) && cargo vendor > /dev/null 2>&1
+
+	# Create .cargo/config.toml for offline build
+	mkdir -p $(PKG_BUILD_DIR)/.cargo
+	echo '[source.crates-io]' > $(PKG_BUILD_DIR)/.cargo/config.toml
+	echo 'replace-with = "vendored-sources"' >> $(PKG_BUILD_DIR)/.cargo/config.toml
+	echo '' >> $(PKG_BUILD_DIR)/.cargo/config.toml
+	echo '[source.vendored-sources]' >> $(PKG_BUILD_DIR)/.cargo/config.toml
+	echo 'directory = "vendor"' >> $(PKG_BUILD_DIR)/.cargo/config.toml
 endef
 
 # Prefer vendored dependencies; cargo should not need network.
