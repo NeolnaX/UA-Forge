@@ -373,7 +373,7 @@ start_service() {
     #  添加基础参数
     procd_append_param command --port "$port"
     procd_append_param command -u "$ua"
-    procd_append_param command --loglevel "$log_level"
+    procd_append_param command --log-level "$log_level"
     [ -n "$whitelist" ] && procd_append_param command -w "$whitelist"
     [ -n "$log_file" ] && procd_append_param command --log "$log_file"
 
