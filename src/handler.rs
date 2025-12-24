@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::net::IpAddr;
 use std::sync::Arc;
 use hyper::Request;
@@ -99,10 +100,10 @@ impl HttpHandler {
         self.fw.report_http(dest_ip, dest_port);
         self.stats.inc_http_requests();
 
-        // Extract UA as owned String to avoid borrow conflicts
-        let original_ua: String = match req.headers().get(USER_AGENT) {
+        // Extract UA as Cow (zero-copy when possible)
+        let original_ua: Cow<'_, str> = match req.headers().get(USER_AGENT) {
             Some(v) => match v.to_str() {
-                Ok(s) => s.to_string(),
+                Ok(s) => Cow::Borrowed(s),
                 Err(_) => return Ok(req),
             },
             None => return Ok(req),
@@ -175,13 +176,16 @@ impl HttpHandler {
 
         // 如果需要修改
         if should_modify {
+            // 在修改 req 之前，将 original_ua 转为 owned 以释放借用
+            let ua_owned = original_ua.into_owned();
+
             req.headers_mut().insert(USER_AGENT, self.user_agent_header.clone());
             self.stats.inc_modified();
-            self.cache_put(&original_ua, CacheDecision::Modify);
+            self.cache_put(&ua_owned, CacheDecision::Modify);
 
             logger::log(
                 logger::Level::Debug,
-                &format!("UA modified: {} -> {}", original_ua, self.config.user_agent)
+                &format!("UA modified: {} -> {}", ua_owned, self.config.user_agent)
             );
         } else {
             self.cache_put(&original_ua, CacheDecision::Pass);
