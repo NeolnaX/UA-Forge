@@ -51,7 +51,14 @@ impl Server {
             let (stream, _) = listener.accept().await?;
 
             // 获取 permit，限制并发连接数
-            let permit = self.conn_limit.clone().acquire_owned().await.unwrap();
+            let permit = match self.conn_limit.clone().acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => {
+                    // Semaphore 被关闭，服务器正在关闭
+                    logger::log(logger::Level::Info, "Semaphore closed, shutting down");
+                    return Ok(());
+                }
+            };
 
             let handler = self.handler.clone();
             let stats = self.stats.clone();

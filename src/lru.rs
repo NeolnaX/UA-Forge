@@ -1,8 +1,17 @@
 use lru::LruCache;
 use std::num::NonZeroUsize;
 
+// Type-safe cache decisions (zero-cost enum)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum CacheDecision {
+    FwWhitelist = 0,
+    Modify = 1,
+    Pass = 2,
+}
+
 pub struct Cache {
-    inner: LruCache<String, String>,
+    inner: LruCache<String, CacheDecision>,
 }
 
 impl Cache {
@@ -13,11 +22,11 @@ impl Cache {
         }
     }
 
-    pub fn get(&mut self, key: &str) -> Option<String> {
-        self.inner.get(key).cloned()
+    pub fn get(&mut self, key: &str) -> Option<CacheDecision> {
+        self.inner.get(key).copied()
     }
 
-    pub fn put(&mut self, key: String, value: String) {
+    pub fn put(&mut self, key: String, value: CacheDecision) {
         self.inner.put(key, value);
     }
 }

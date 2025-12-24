@@ -7,39 +7,9 @@ use crate::config::Config;
 use crate::stats::Stats;
 use crate::firewall::FirewallManager;
 use crate::logger;
-use crate::lru::Cache;
+use crate::lru::{Cache, CacheDecision};
 use parking_lot::Mutex;
 use regex::Regex;
-
-// Type-safe cache decisions (zero-cost enum)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-enum CacheDecision {
-    FwWhitelist = 0,
-    Modify = 1,
-    Pass = 2,
-}
-
-impl CacheDecision {
-    #[inline]
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::FwWhitelist => "FW_WHITELIST",
-            Self::Modify => "MODIFY",
-            Self::Pass => "PASS",
-        }
-    }
-
-    #[inline]
-    fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "FW_WHITELIST" => Some(Self::FwWhitelist),
-            "MODIFY" => Some(Self::Modify),
-            "PASS" => Some(Self::Pass),
-            _ => None,
-        }
-    }
-}
 
 pub struct HttpHandler {
     config: Config,
@@ -79,8 +49,7 @@ impl HttpHandler {
             return None;
         }
         let mut cache = self.cache.lock();
-        let value = cache.get(key)?;
-        CacheDecision::from_str(&value)
+        cache.get(key)
     }
 
     /// 向缓存中写入值
@@ -89,7 +58,7 @@ impl HttpHandler {
             return;
         }
         let mut cache = self.cache.lock();
-        cache.put(key.to_string(), value.as_str().to_string());
+        cache.put(key.to_string(), value);
     }
 
     /// 判断 UA 是否需要修改（规则匹配）
