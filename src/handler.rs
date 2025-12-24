@@ -45,19 +45,19 @@ impl HttpHandler {
 
     /// 从缓存中获取值
     fn cache_get(&self, key: &str) -> Option<CacheDecision> {
-        if self.config.cache_size == 0 {
+        let mut cache = self.cache.lock();
+        if cache.is_disabled() {
             return None;
         }
-        let mut cache = self.cache.lock();
         cache.get(key)
     }
 
     /// 向缓存中写入值
     fn cache_put(&self, key: &str, value: CacheDecision) {
-        if self.config.cache_size == 0 {
+        let mut cache = self.cache.lock();
+        if cache.is_disabled() {
             return;
         }
-        let mut cache = self.cache.lock();
         cache.put(key.to_string(), value);
     }
 

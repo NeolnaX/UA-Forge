@@ -16,10 +16,16 @@ pub struct Cache {
 
 impl Cache {
     pub fn new(cap: usize) -> Self {
+        // 允许 cap=0 表示禁用缓存，使用最小值 1 避免 panic
         let capacity = NonZeroUsize::new(cap.max(1)).unwrap();
         Self {
             inner: LruCache::new(capacity),
         }
+    }
+
+    #[inline]
+    pub fn is_disabled(&self) -> bool {
+        self.inner.cap().get() == 1
     }
 
     pub fn get(&mut self, key: &str) -> Option<CacheDecision> {
