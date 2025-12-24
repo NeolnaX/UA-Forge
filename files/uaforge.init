@@ -467,20 +467,12 @@ start_service() {
             procd_append_param command --keywords "$keywords"
             ;;
         "regex")
-            local ua_regex replace_method
+            local ua_regex
             config_get ua_regex "main" "ua_regex" "(iPhone|iPad|Android|Macintosh|Windows|Linux)"
-            config_get replace_method "main" "replace_method" "full"
 
             logger -t "$NAME" "Using regex matching mode."
             procd_append_param command --enable-regex
             procd_append_param command -r "$ua_regex"
-
-            if [ "$replace_method" = "partial" ]; then
-                logger -t "$NAME" "Partial replacement enabled."
-                procd_append_param command -s
-            else
-                logger -t "$NAME" "Full replacement enabled for regex match."
-            fi
             ;;
         "all")
             logger -t "$NAME" "Using modify-all (force) mode."
