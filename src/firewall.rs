@@ -112,8 +112,7 @@ impl Drop for FirewallManager {
 }
 
 fn worker(fw_config: FirewallConfig, rx: mpsc::Receiver<Event>) {
-    let profiles: HashMap<(IpAddr, u16), PortProfile> = HashMap::new();
-    let profiles = Arc::new(Mutex::new(profiles));
+    let mut profiles: HashMap<(IpAddr, u16), PortProfile> = HashMap::new();
 
     // Batch state: dedup by ip:port; single set/type pair in current OpenWrt usage.
     let mut batch: HashMap<(IpAddr, u16), u32> = HashMap::new();
@@ -147,17 +146,7 @@ fn worker(fw_config: FirewallConfig, rx: mpsc::Receiver<Event>) {
                     }
                 }
                 Event::Http { ip, port } => {
-                    let mut guard = match profiles.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            logger::log(
-                                logger::Level::Warn,
-                                "firewall profiles mutex poisoned (http), recovering",
-                            );
-                            e.into_inner()
-                        }
-                    };
-                    let p = guard
+                    let p = profiles
                         .entry((ip, port))
                         .or_insert_with(|| PortProfile::new(Instant::now()));
 
@@ -172,17 +161,7 @@ fn worker(fw_config: FirewallConfig, rx: mpsc::Receiver<Event>) {
                     p.last_event = now;
                 }
                 Event::NonHttp { ip, port } => {
-                    let mut guard = match profiles.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            logger::log(
-                                logger::Level::Warn,
-                                "firewall profiles mutex poisoned (non-http), recovering",
-                            );
-                            e.into_inner()
-                        }
-                    };
-                    let p = guard
+                    let p = profiles
                         .entry((ip, port))
                         .or_insert_with(|| PortProfile::new(Instant::now()));
 
@@ -211,11 +190,11 @@ fn worker(fw_config: FirewallConfig, rx: mpsc::Receiver<Event>) {
         }
 
         // Timers: finalize decisions
-        finalize_decisions(&fw_config, &profiles, &mut batch, &mut batch_deadline);
+        finalize_decisions(&fw_config, &mut profiles, &mut batch, &mut batch_deadline);
 
         // Timers: cleanup
         if Instant::now() >= cleanup_deadline {
-            cleanup_profiles(&profiles, cleanup_interval);
+            cleanup_profiles(&mut profiles, cleanup_interval);
             cleanup_deadline = Instant::now() + cleanup_interval;
         }
     }
@@ -225,9 +204,8 @@ fn worker(fw_config: FirewallConfig, rx: mpsc::Receiver<Event>) {
     }
 }
 
-fn decision_deadline(profiles: &Arc<Mutex<HashMap<(IpAddr, u16), PortProfile>>>) -> Option<Instant> {
-    let guard = profiles.lock().ok()?;
-    guard
+fn decision_deadline(profiles: &HashMap<(IpAddr, u16), PortProfile>) -> Option<Instant> {
+    profiles
         .values()
         .filter_map(|p| p.decision_deadline)
         .min()
@@ -235,41 +213,30 @@ fn decision_deadline(profiles: &Arc<Mutex<HashMap<(IpAddr, u16), PortProfile>>>)
 
 fn finalize_decisions(
     fw_config: &FirewallConfig,
-    profiles: &Arc<Mutex<HashMap<(IpAddr, u16), PortProfile>>>,
+    profiles: &mut HashMap<(IpAddr, u16), PortProfile>,
     batch: &mut HashMap<(IpAddr, u16), u32>,
     batch_deadline: &mut Option<Instant>,
 ) {
     let now = Instant::now();
-    let mut add_list: Vec<(IpAddr, u16, u32)> = Vec::new();
 
-    {
-        let mut guard = match profiles.lock() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
-        let keys: Vec<(IpAddr, u16)> = guard
-            .iter()
-            .filter_map(|(k, p)| {
-                if let Some(deadline) = p.decision_deadline {
-                    if now >= deadline
-                        && p.non_http_score >= fw_config.fw_nonhttp_threshold
-                        && !p.http_lock_expires.is_some_and(|t| now < t)
-                    {
-                        return Some(*k);
-                    }
+    let keys: Vec<(IpAddr, u16)> = profiles
+        .iter()
+        .filter_map(|(k, p)| {
+            if let Some(deadline) = p.decision_deadline {
+                if now >= deadline
+                    && p.non_http_score >= fw_config.fw_nonhttp_threshold
+                    && !p.http_lock_expires.is_some_and(|t| now < t)
+                {
+                    return Some(*k);
                 }
-                None
-            })
-            .collect();
+            }
+            None
+        })
+        .collect();
 
-        for k in keys {
-            guard.remove(&k);
-            add_list.push((k.0, k.1, fw_config.fw_timeout));
-        }
-    }
-
-    for (ip, port, timeout) in add_list {
-        batch.insert((ip, port), timeout);
+    for k in keys {
+        profiles.remove(&k);
+        batch.insert(k, fw_config.fw_timeout);
         if batch_deadline.is_none() {
             *batch_deadline = Some(Instant::now() + Duration::from_millis(100));
         }
@@ -277,15 +244,11 @@ fn finalize_decisions(
 }
 
 fn cleanup_profiles(
-    profiles: &Arc<Mutex<HashMap<(IpAddr, u16), PortProfile>>>,
+    profiles: &mut HashMap<(IpAddr, u16), PortProfile>,
     interval: Duration,
 ) {
     let now = Instant::now();
-    let mut guard = match profiles.lock() {
-        Ok(g) => g,
-        Err(_) => return,
-    };
-    guard.retain(|_, p| {
+    profiles.retain(|_, p| {
         // Keep if in decision window or cooldown.
         if p.decision_deadline.is_some() {
             return true;

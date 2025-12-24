@@ -41,7 +41,13 @@ async fn main() -> ExitCode {
     stats.start_writer("/tmp/uaforge.stats", Duration::from_secs(5));
 
     let fw = Arc::new(firewall::FirewallManager::new(config.firewall.clone()));
-    let handler = Arc::new(handler::HttpHandler::new(config.clone(), stats.clone(), fw));
+    let handler = match handler::HttpHandler::new(config.clone(), stats.clone(), fw) {
+        Ok(h) => Arc::new(h),
+        Err(e) => {
+            eprintln!("[uaforge] handler init error: {e}");
+            return ExitCode::from(2);
+        }
+    };
     let server = server::Server::new(config, handler, stats);
 
     if let Err(e) = server.run().await {

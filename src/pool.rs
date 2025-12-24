@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::net::TcpStream;
 use hyper::client::conn::http1::SendRequest;
@@ -9,15 +8,15 @@ use hyper_util::rt::TokioIo;
 
 /// HTTP 连接池
 pub struct ConnectionPool {
-    pools: Arc<Mutex<HashMap<SocketAddr, Vec<SendRequest<Incoming>>>>>,
+    pools: Mutex<HashMap<SocketAddr, Vec<SendRequest<Incoming>>>>,
     max_idle_per_host: usize,
 }
 
 impl ConnectionPool {
     pub fn new(max_idle_per_host: usize) -> Self {
         Self {
-            pools: Arc::new(Mutex::new(HashMap::new())),
-            max_idle_per_host: max_idle_per_host.max(1), // 至少保留 1 个连接
+            pools: Mutex::new(HashMap::new()),
+            max_idle_per_host, // 允许 0 表示不缓存空闲连接
         }
     }
 
@@ -43,7 +42,7 @@ impl ConnectionPool {
         self.create_connection(addr).await
     }
     /// 创建新的 HTTP 连接
-    async fn create_connection(
+    pub async fn create_connection(
         &self,
         addr: SocketAddr,
     ) -> Result<SendRequest<Incoming>, std::io::Error> {

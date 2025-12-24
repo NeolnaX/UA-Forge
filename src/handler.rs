@@ -51,12 +51,17 @@ pub struct HttpHandler {
 }
 
 impl HttpHandler {
-    pub fn new(config: Config, stats: Arc<Stats>, fw: Arc<FirewallManager>) -> Self {
+    pub fn new(config: Config, stats: Arc<Stats>, fw: Arc<FirewallManager>) -> Result<Self, String> {
         let cache = Arc::new(Mutex::new(Cache::new(config.cache_size)));
 
-        // Pre-compile regex if in Regex mode
+        // Pre-compile regex if in Regex mode - fail fast on invalid pattern
         let regex_cache = if let crate::config::MatchMode::Regex { pattern, .. } = &config.match_mode {
-            Regex::new(pattern).ok()
+            match Regex::new(pattern) {
+                Ok(re) => Some(re),
+                Err(e) => {
+                    return Err(format!("Invalid regex pattern '{}': {}", pattern, e));
+                }
+            }
         } else {
             None
         };
@@ -65,7 +70,7 @@ impl HttpHandler {
         let user_agent_header = HeaderValue::from_str(&config.user_agent)
             .unwrap_or_else(|_| HeaderValue::from_static("UAForge"));
 
-        Self { config, stats, fw, cache, regex_cache, user_agent_header }
+        Ok(Self { config, stats, fw, cache, regex_cache, user_agent_header })
     }
 
     /// 从缓存中获取值

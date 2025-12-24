@@ -1,7 +1,8 @@
 use std::fs::OpenOptions;
 use std::io::{self, Write};
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
+use parking_lot::Mutex;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Level {
@@ -61,9 +62,8 @@ pub fn log(level: Level, msg: &str) {
         Level::Warn => "WARN",
         Level::Error => "ERROR",
     };
-    if let Ok(mut out) = logger.out.lock() {
-        let _ = writeln!(out, "[{ts}] [{level_str}] {msg}");
-        let _ = out.flush();
-    }
+    let mut out = logger.out.lock();
+    let _ = writeln!(out, "[{ts}] [{level_str}] {msg}");
+    // 移除 flush() 以减少 I/O 阻塞，依赖操作系统缓冲
 }
 

@@ -1,6 +1,6 @@
 use std::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Condvar};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::sync::atomic::AtomicBool;
@@ -15,6 +15,7 @@ pub struct Stats {
     cache_hit_pass: AtomicUsize,
     stop: AtomicBool,
     writer_handle: Mutex<Option<thread::JoinHandle<()>>>,
+    stop_cond: Condvar,
 }
 
 impl Stats {
@@ -27,6 +28,7 @@ impl Stats {
             cache_hit_pass: AtomicUsize::new(0),
             stop: AtomicBool::new(false),
             writer_handle: Mutex::new(None),
+            stop_cond: Condvar::new(),
         }
     }
 
@@ -62,8 +64,13 @@ impl Stats {
         let handle = thread::spawn(move || {
             let mut last_http = 0u64;
             let mut last = Instant::now();
+            let dummy_mutex = Mutex::new(());
             loop {
-                thread::sleep(interval);
+                // 使用 Condvar 等待，提升退出响应性
+                let guard = dummy_mutex.lock().unwrap();
+                let (guard, _timeout) = stats.stop_cond.wait_timeout(guard, interval).unwrap();
+                drop(guard);
+
                 if stats.stop.load(Ordering::Relaxed) {
                     return;
                 }
@@ -119,6 +126,9 @@ impl Drop for Stats {
     fn drop(&mut self) {
         // 设置停止标志
         self.stop.store(true, Ordering::Relaxed);
+
+        // 通知 Condvar 唤醒等待线程
+        self.stop_cond.notify_all();
 
         // 等待后台线程结束
         if let Ok(mut guard) = self.writer_handle.lock() {

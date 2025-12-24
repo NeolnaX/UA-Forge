@@ -24,7 +24,7 @@ pub struct Server {
 
 impl Server {
     pub fn new(config: Config, handler: Arc<HttpHandler>, stats: Arc<Stats>) -> Self {
-        let pool = Arc::new(ConnectionPool::new(10)); // 每个主机最多10个空闲连接
+        let pool = Arc::new(ConnectionPool::new(config.pool_size));
         Self {
             config,
             handler,
@@ -104,14 +104,12 @@ async fn handle_connection(
     }
 
     // HTTP 流量，使用 hyper 处理
-    let server = TcpStream::connect(orig_dst).await?;
-    process_http(client, server, handler, dest_ip, dest_port, pool).await
+    process_http(client, handler, dest_ip, dest_port, pool).await
 }
 
 /// 使用 hyper 处理 HTTP 请求
 async fn process_http(
     client: TcpStream,
-    _server: TcpStream,
     handler: Arc<HttpHandler>,
     dest_ip: std::net::IpAddr,
     dest_port: u16,
@@ -136,8 +134,10 @@ async fn process_http(
                 }
             };
 
-            // 从连接池获取或创建连接
-            let mut sender = pool.get_or_create(dest_addr)
+            // 创建新连接（不使用连接池以避免 HTTP/1.1 响应串包问题）
+            // HTTP/1.1 要求响应 body 完全消费后才能复用连接，但 hyper 的 Response
+            // 是流式的，在这里回收会导致"前一个响应未读完就发送下一个请求"
+            let mut sender = pool.create_connection(dest_addr)
                 .await
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
 
@@ -146,8 +146,8 @@ async fn process_http(
                 .await
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
 
-            // 回收连接到连接池
-            pool.recycle(dest_addr, sender).await;
+            // 不回收连接，让它在 response 消费完后自动关闭
+            // pool.recycle(dest_addr, sender).await; // REMOVED
 
             Ok::<_, std::io::Error>(response)
         }
