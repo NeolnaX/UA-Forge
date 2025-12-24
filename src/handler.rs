@@ -16,12 +16,14 @@ pub struct HttpHandler {
     stats: Arc<Stats>,
     fw: Arc<FirewallManager>,
     cache: Arc<Mutex<Cache>>,
+    cache_enabled: bool,
     regex_cache: Option<Regex>,
     user_agent_header: HeaderValue,
 }
 
 impl HttpHandler {
     pub fn new(config: Config, stats: Arc<Stats>, fw: Arc<FirewallManager>) -> Result<Self, String> {
+        let cache_enabled = config.cache_size > 0;
         let cache = Arc::new(Mutex::new(Cache::new(config.cache_size)));
 
         // Pre-compile regex if in Regex mode - fail fast on invalid pattern
@@ -40,24 +42,26 @@ impl HttpHandler {
         let user_agent_header = HeaderValue::from_str(&config.user_agent)
             .unwrap_or_else(|_| HeaderValue::from_static("UAForge"));
 
-        Ok(Self { config, stats, fw, cache, regex_cache, user_agent_header })
+        Ok(Self { config, stats, fw, cache, cache_enabled, regex_cache, user_agent_header })
     }
 
     /// 从缓存中获取值
     fn cache_get(&self, key: &str) -> Option<CacheDecision> {
-        let mut cache = self.cache.lock();
-        if cache.is_disabled() {
+        // Fast path: 如果缓存禁用，直接返回，避免锁竞争
+        if !self.cache_enabled {
             return None;
         }
+        let mut cache = self.cache.lock();
         cache.get(key)
     }
 
     /// 向缓存中写入值
     fn cache_put(&self, key: &str, value: CacheDecision) {
-        let mut cache = self.cache.lock();
-        if cache.is_disabled() {
+        // Fast path: 如果缓存禁用，直接返回，避免锁竞争
+        if !self.cache_enabled {
             return;
         }
+        let mut cache = self.cache.lock();
         cache.put(key.to_string(), value);
     }
 

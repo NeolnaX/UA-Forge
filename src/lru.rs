@@ -16,16 +16,12 @@ pub struct Cache {
 
 impl Cache {
     pub fn new(cap: usize) -> Self {
-        // 允许 cap=0 表示禁用缓存，使用最小值 1 避免 panic
+        // cap=0 表示禁用缓存，但仍需创建最小容量避免 panic
+        // 实际的禁用检查在 HttpHandler 层通过 cache_enabled 快路径完成
         let capacity = NonZeroUsize::new(cap.max(1)).unwrap();
         Self {
             inner: LruCache::new(capacity),
         }
-    }
-
-    #[inline]
-    pub fn is_disabled(&self) -> bool {
-        self.inner.cap().get() == 1
     }
 
     pub fn get(&mut self, key: &str) -> Option<CacheDecision> {
