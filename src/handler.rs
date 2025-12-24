@@ -9,18 +9,28 @@ use crate::firewall::FirewallManager;
 use crate::logger;
 use crate::lru::Cache;
 use std::sync::Mutex;
+use regex::Regex;
 
 pub struct HttpHandler {
     config: Config,
     stats: Arc<Stats>,
     fw: Arc<FirewallManager>,
     cache: Arc<Mutex<Cache>>,
+    regex_cache: Option<Regex>,
 }
 
 impl HttpHandler {
     pub fn new(config: Config, stats: Arc<Stats>, fw: Arc<FirewallManager>) -> Self {
         let cache = Arc::new(Mutex::new(Cache::new(config.cache_size)));
-        Self { config, stats, fw, cache }
+
+        // Pre-compile regex if in Regex mode
+        let regex_cache = if let crate::config::MatchMode::Regex { pattern, .. } = &config.match_mode {
+            Regex::new(pattern).ok()
+        } else {
+            None
+        };
+
+        Self { config, stats, fw, cache, regex_cache }
     }
 
     /// 从缓存中获取值
@@ -54,10 +64,9 @@ impl HttpHandler {
                 // 检查 UA 是否包含任意关键词
                 keywords.iter().any(|kw| ua.contains(kw.as_str()))
             }
-            MatchMode::Regex { pattern, .. } => {
-                // 使用正则表达式匹配
-                // 注意：这里简化处理，实际应该缓存编译后的正则
-                if let Ok(re) = regex::Regex::new(pattern) {
+            MatchMode::Regex { .. } => {
+                // Use pre-compiled regex
+                if let Some(ref re) = self.regex_cache {
                     re.is_match(ua)
                 } else {
                     false
