@@ -1,9 +1,6 @@
 use clap::Parser;
 use std::time::Duration;
 
-const DEFAULT_POOL_SIZE: usize = 64;
-const MAX_POOL_SIZE: usize = 256;
-
 #[derive(Clone, Debug)]
 pub struct FirewallConfig {
     pub enable_firewall_set: bool,
@@ -39,7 +36,7 @@ impl Default for FirewallConfig {
 pub enum MatchMode {
     Keywords(Vec<String>),
     Force,
-    Regex { pattern: String, partial: bool },
+    Regex { pattern: String },
 }
 
 #[derive(Parser, Clone, Debug)]
@@ -72,20 +69,11 @@ pub struct CliArgs {
     #[arg(long, default_value = "1000", help = "Cache size")]
     pub cache_size: usize,
 
-    #[arg(long, default_value = "8192", help = "Buffer size (1024-65536)")]
-    pub buffer_size: usize,
-
-    #[arg(short = 'p', long, default_value = "0", help = "Connection pool size (0=auto)")]
-    pub pool_size: usize,
-
     #[arg(long, help = "Force replace all User-Agents")]
     pub force: bool,
 
     #[arg(long, help = "Enable regex mode")]
     pub enable_regex: bool,
-
-    #[arg(short = 's', long, help = "Enable partial regex replacement")]
-    pub partial_replace: bool,
 
     // Firewall options
     #[arg(long, help = "Firewall type (ipset/nft)")]
@@ -125,8 +113,6 @@ pub struct Config {
     pub log_file: Option<String>,
     pub whitelist: Vec<String>,
     pub cache_size: usize,
-    pub buffer_size: usize,
-    pub pool_size: usize,
     pub match_mode: MatchMode,
     pub firewall: FirewallConfig,
 }
@@ -168,20 +154,6 @@ impl Config {
 
         let cli = CliArgs::parse_from(normalized_args);
 
-        // Validate buffer size
-        if cli.buffer_size < 1024 || cli.buffer_size > 65536 {
-            return Err("invalid buffer-size (expected 1024..65536)".to_string());
-        }
-
-        // Validate and adjust pool size
-        let pool_size = if cli.pool_size == 0 {
-            DEFAULT_POOL_SIZE
-        } else if cli.pool_size > MAX_POOL_SIZE {
-            MAX_POOL_SIZE
-        } else {
-            cli.pool_size
-        };
-
         // Determine match mode
         let match_mode = if cli.force {
             MatchMode::Force
@@ -189,10 +161,7 @@ impl Config {
             let pattern = cli.regex_pattern.unwrap_or_else(|| {
                 "(iPhone|iPad|Android|Macintosh|Windows|Linux|Apple|Mac OS X|Mobile)".to_string()
             });
-            MatchMode::Regex {
-                pattern,
-                partial: cli.partial_replace,
-            }
+            MatchMode::Regex { pattern }
         } else {
             let keywords = cli
                 .keywords
@@ -231,8 +200,6 @@ impl Config {
             log_file: cli.log,
             whitelist: cli.whitelist,
             cache_size: cli.cache_size,
-            buffer_size: cli.buffer_size,
-            pool_size,
             match_mode,
             firewall,
         })

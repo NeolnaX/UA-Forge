@@ -139,7 +139,20 @@ impl HttpHandler {
             return Ok(req);
         }
 
-        // 1. 检查防火墙 UA 白名单（最高优先级）
+        // 1. 检查 UA 白名单（最高优先级 - 直接放行）
+        if !self.config.whitelist.is_empty() {
+            for keyword in &self.config.whitelist {
+                if original_ua.contains(keyword.as_str()) {
+                    logger::log(
+                        logger::Level::Debug,
+                        &format!("UA whitelist hit: {} (keyword: {})", original_ua, keyword)
+                    );
+                    return Ok(req);
+                }
+            }
+        }
+
+        // 2. 检查防火墙 UA 白名单（次优先级 - 卸载到防火墙）
         if self.fw.enabled() && !self.config.firewall.fw_ua_whitelist.is_empty() {
             // 先检查缓存，避免重复添加防火墙规则
             if let Some(cached) = self.cache_get(&original_ua) {
