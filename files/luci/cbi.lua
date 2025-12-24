@@ -129,18 +129,6 @@ operating_profile:value("High", "高(High)")
 operating_profile:value("custom", "自定义")
 operating_profile.default = "Medium"
 
-buffer_size = main:taboption("general", Value, "buffer_size", "I/O 缓冲区大小（字节）")
-buffer_size:depends("operating_profile", "custom")
-buffer_size.datatype = "uinteger"
-buffer_size.default = "8192"
-buffer_size.description = "每个连接使用的缓冲区大小，单位为字节。较大的缓冲区有助于提升吞吐性能。"
-
-pool_size = main:taboption("general", Value, "pool_size", "连接池大小")
-pool_size:depends("operating_profile", "custom")
-pool_size.datatype = "uinteger"
-pool_size.default = "64"
-pool_size.description = "HTTP 连接池的大小，用于复用 TCP 连接。建议设置为 64-256 之间。"
-
 cache_size = main:taboption("general", Value, "cache_size", "LRU 缓存大小")
 cache_size:depends("operating_profile", "custom")
 cache_size.datatype = "uinteger"
@@ -170,14 +158,6 @@ ua_regex = main:taboption("general", Value, "ua_regex", "正则表达式")
 ua_regex:depends("match_mode", "regex")
 ua_regex.default = "(iPhone|iPad|Android|Macintosh|Windows|Linux)"
 ua_regex.description = "用于匹配 User-Agent 的正则表达式。"
-
--- 仅在 regex 模式下显示
-replace_method = main:taboption("general", ListValue, "replace_method", "替换方式")
-replace_method:depends("match_mode", "regex")
-replace_method:value("full", "完整替换")
-replace_method:value("partial", "部分替换（仅替换匹配内容）")
-replace_method.default = "full"
-replace_method.description = "<b>完整替换：</b> 将整个 UA 替换为新值。<br><b>部分替换：</b> 仅将 UA 中被正则匹配到的部分替换为新值。"
 
 whitelist = main:taboption("general", Value, "whitelist", "User-Agent 白名单")
 whitelist.placeholder = ""
