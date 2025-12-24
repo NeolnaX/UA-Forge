@@ -284,7 +284,7 @@ fn flush_batch(fw_config: &FirewallConfig, batch: &mut HashMap<(IpAddr, u16), u3
     if let Err(e) = result {
         logger::log(
             logger::Level::Warn,
-            &format!("firewall batch failed ({fw_type}/{set_name}): {e}"),
+            format_args!("firewall batch failed ({}/{}): {}", fw_type, set_name, e),
         );
     }
 }

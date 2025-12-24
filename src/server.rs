@@ -44,7 +44,7 @@ impl Server {
 
         logger::log(
             logger::Level::Info,
-            &format!("listening on {} (async mode)", addr),
+            format_args!("listening on {} (async mode)", addr),
         );
 
         loop {
@@ -55,7 +55,7 @@ impl Server {
                 Ok(p) => p,
                 Err(_) => {
                     // Semaphore 被关闭，服务器正在关闭
-                    logger::log(logger::Level::Info, "Semaphore closed, shutting down");
+                    logger::log(logger::Level::Info, format_args!("Semaphore closed, shutting down"));
                     return Ok(());
                 }
             };
@@ -70,7 +70,7 @@ impl Server {
                 if let Err(e) = handle_connection(stream, handler, stats, connector).await {
                     logger::log(
                         logger::Level::Debug,
-                        &format!("connection error: {:?}", e)
+                        format_args!("connection error: {:?}", e)
                     );
                 }
             });
@@ -95,7 +95,7 @@ async fn handle_connection(
 
     logger::log(
         logger::Level::Debug,
-        &format!("connection to {}:{}", dest_ip, dest_port)
+        format_args!("connection to {}:{}", dest_ip, dest_port)
     );
 
     // Peek 前几个字节检测是否是 HTTP
@@ -110,7 +110,7 @@ async fn handle_connection(
 
         logger::log(
             logger::Level::Debug,
-            &format!("non-HTTP traffic to {}:{}, bypassing", dest_ip, dest_port)
+            format_args!("non-HTTP traffic to {}:{}, bypassing", dest_ip, dest_port)
         );
 
         // 连接到真实服务器并直接转发

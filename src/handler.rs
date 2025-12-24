@@ -119,7 +119,7 @@ impl HttpHandler {
                 if original_ua.contains(keyword.as_str()) {
                     logger::log(
                         logger::Level::Debug,
-                        &format!("UA whitelist hit: {} (keyword: {})", original_ua, keyword)
+                        format_args!("UA whitelist hit: {} (keyword: {})", original_ua, keyword)
                     );
                     return Ok(req);
                 }
@@ -140,7 +140,7 @@ impl HttpHandler {
                 if original_ua.contains(keyword.as_str()) {
                     logger::log(
                         logger::Level::Info,
-                        &format!("Firewall UA whitelist hit: {} (keyword: {})", original_ua, keyword)
+                        format_args!("Firewall UA whitelist hit: {} (keyword: {})", original_ua, keyword)
                     );
 
                     self.fw.add(dest_ip, dest_port, self.config.firewall.fw_timeout);
@@ -149,7 +149,7 @@ impl HttpHandler {
                     if self.config.firewall.fw_drop {
                         logger::log(
                             logger::Level::Info,
-                            &format!("Dropping connection for {}:{} to force bypass", dest_ip, dest_port)
+                            format_args!("Dropping connection for {}:{} to force bypass", dest_ip, dest_port)
                         );
                         return Err("Connection dropped: UA whitelist match (will bypass on reconnect)".into());
                     }
@@ -185,7 +185,7 @@ impl HttpHandler {
 
             logger::log(
                 logger::Level::Debug,
-                &format!("UA modified: {} -> {}", ua_owned, self.config.user_agent)
+                format_args!("UA modified: {} -> {}", ua_owned, self.config.user_agent)
             );
         } else {
             self.cache_put(&original_ua, CacheDecision::Pass);

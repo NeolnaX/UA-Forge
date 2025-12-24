@@ -44,9 +44,9 @@ pub fn init(level: Level, path: Option<&str>) -> io::Result<()> {
     Ok(())
 }
 
-pub fn log(level: Level, msg: &str) {
+pub fn log(level: Level, args: std::fmt::Arguments) {
     let Some(logger) = LOGGER.get() else {
-        let _ = writeln!(io::stderr(), "{msg}");
+        let _ = writeln!(io::stderr(), "{}", args);
         return;
     };
     if level < logger.level {
@@ -63,7 +63,7 @@ pub fn log(level: Level, msg: &str) {
         Level::Error => "ERROR",
     };
     let mut out = logger.out.lock();
-    let _ = writeln!(out, "[{ts}] [{level_str}] {msg}");
+    let _ = writeln!(out, "[{ts}] [{level_str}] {}", args);
     // 移除 flush() 以减少 I/O 阻塞，依赖操作系统缓冲
 }
 
