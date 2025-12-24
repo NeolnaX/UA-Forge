@@ -13,14 +13,11 @@ config 'uaforge' 'main'
 	# 性能预设
 	option operating_profile 'Medium'
 	option cache_size '3000'
-	option buffer_size '8192'
-	option pool_size '500'
 
 	# 匹配模式
 	option match_mode 'keywords'
 	option keywords 'iPhone,iPad,Android,Macintosh,Windows'
 	option ua_regex '(iPhone|iPad|Android|Macintosh|Windows|Linux|Apple|Mac OS X|Mobile)'
-	option replace_method 'full'
 
 	# 网络配置
 	option iface 'br-lan'
