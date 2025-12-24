@@ -111,7 +111,11 @@ cache_hit_pass:{cache_pass}\n\
 total_cache_ratio:{cache_ratio:.2}\n"
                 );
 
-                let _ = fs::write(&path, content);
+                // 原子写入：先写临时文件，再 rename（避免 LuCI 读到半截）
+                let tmp_path = format!("{}.tmp", path);
+                if fs::write(&tmp_path, &content).is_ok() {
+                    let _ = fs::rename(&tmp_path, &path);
+                }
             }
         });
 
