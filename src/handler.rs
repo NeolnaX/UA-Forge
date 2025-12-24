@@ -8,8 +8,38 @@ use crate::stats::Stats;
 use crate::firewall::FirewallManager;
 use crate::logger;
 use crate::lru::Cache;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use regex::Regex;
+
+// Type-safe cache decisions (zero-cost enum)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+enum CacheDecision {
+    FwWhitelist = 0,
+    Modify = 1,
+    Pass = 2,
+}
+
+impl CacheDecision {
+    #[inline]
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::FwWhitelist => "FW_WHITELIST",
+            Self::Modify => "MODIFY",
+            Self::Pass => "PASS",
+        }
+    }
+
+    #[inline]
+    fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "FW_WHITELIST" => Some(Self::FwWhitelist),
+            "MODIFY" => Some(Self::Modify),
+            "PASS" => Some(Self::Pass),
+            _ => None,
+        }
+    }
+}
 
 pub struct HttpHandler {
     config: Config,
@@ -17,6 +47,7 @@ pub struct HttpHandler {
     fw: Arc<FirewallManager>,
     cache: Arc<Mutex<Cache>>,
     regex_cache: Option<Regex>,
+    user_agent_header: HeaderValue,
 }
 
 impl HttpHandler {
@@ -30,25 +61,30 @@ impl HttpHandler {
             None
         };
 
-        Self { config, stats, fw, cache, regex_cache }
+        // Pre-convert user_agent to HeaderValue (validated once)
+        let user_agent_header = HeaderValue::from_str(&config.user_agent)
+            .unwrap_or_else(|_| HeaderValue::from_static("UAForge"));
+
+        Self { config, stats, fw, cache, regex_cache, user_agent_header }
     }
 
     /// 从缓存中获取值
-    fn cache_get(&self, key: &str) -> Option<String> {
+    fn cache_get(&self, key: &str) -> Option<CacheDecision> {
         if self.config.cache_size == 0 {
             return None;
         }
-        self.cache.lock().ok()?.get(key).map(|s| s.clone())
+        let mut cache = self.cache.lock();
+        let value = cache.get(key)?;
+        CacheDecision::from_str(&value)
     }
 
     /// 向缓存中写入值
-    fn cache_put(&self, key: String, value: String) {
+    fn cache_put(&self, key: &str, value: CacheDecision) {
         if self.config.cache_size == 0 {
             return;
         }
-        if let Ok(mut cache) = self.cache.lock() {
-            cache.put(key, value);
-        }
+        let mut cache = self.cache.lock();
+        cache.put(key.to_string(), value.as_str().to_string());
     }
 
     /// 判断 UA 是否需要修改（规则匹配）
@@ -82,16 +118,17 @@ impl HttpHandler {
         dest_ip: IpAddr,
         dest_port: u16,
     ) -> Result<Request<hyper::body::Incoming>, Box<dyn std::error::Error + Send + Sync>> {
-        // 报告 HTTP 流量到防火墙
         self.fw.report_http(dest_ip, dest_port);
         self.stats.inc_http_requests();
 
-        // 获取原始 User-Agent
-        let original_ua = req.headers()
-            .get(USER_AGENT)
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string())
-            .unwrap_or_default();
+        // Extract UA as owned String to avoid borrow conflicts
+        let original_ua: String = match req.headers().get(USER_AGENT) {
+            Some(v) => match v.to_str() {
+                Ok(s) => s.to_string(),
+                Err(_) => return Ok(req),
+            },
+            None => return Ok(req),
+        };
 
         if original_ua.is_empty() {
             return Ok(req);
@@ -101,26 +138,22 @@ impl HttpHandler {
         if self.fw.enabled() && !self.config.firewall.fw_ua_whitelist.is_empty() {
             // 先检查缓存，避免重复添加防火墙规则
             if let Some(cached) = self.cache_get(&original_ua) {
-                if cached == "FW_WHITELIST" {
+                if cached == CacheDecision::FwWhitelist {
                     return Ok(req);
                 }
             }
 
             // 检查是否在白名单中
             for keyword in &self.config.firewall.fw_ua_whitelist {
-                if original_ua.contains(keyword) {
+                if original_ua.contains(keyword.as_str()) {
                     logger::log(
                         logger::Level::Info,
                         &format!("Firewall UA whitelist hit: {} (keyword: {})", original_ua, keyword)
                     );
 
-                    // 添加到防火墙规则（只在第一次）
                     self.fw.add(dest_ip, dest_port, self.config.firewall.fw_timeout);
+                    self.cache_put(&original_ua, CacheDecision::FwWhitelist);
 
-                    // 缓存防火墙白名单状态
-                    self.cache_put(original_ua.clone(), "FW_WHITELIST".to_string());
-
-                    // 如果启用了 fw_drop，断开连接强制重连
                     if self.config.firewall.fw_drop {
                         logger::log(
                             logger::Level::Info,
@@ -137,7 +170,7 @@ impl HttpHandler {
         // 检查缓存：缓存记录是否需要修改
         let should_modify = if let Some(cached_result) = self.cache_get(&original_ua) {
             // 缓存命中
-            if cached_result == "PASS" {
+            if cached_result == CacheDecision::Pass {
                 self.stats.inc_cache_pass();
                 false
             } else {
@@ -151,24 +184,16 @@ impl HttpHandler {
 
         // 如果需要修改
         if should_modify {
-            let new_ua = self.config.user_agent.clone();
-            
-            req.headers_mut().insert(
-                USER_AGENT,
-                HeaderValue::from_str(&new_ua)?
-            );
+            req.headers_mut().insert(USER_AGENT, self.user_agent_header.clone());
             self.stats.inc_modified();
-
-            // 更新缓存：记录需要修改
-            self.cache_put(original_ua.clone(), "MODIFY".to_string());
+            self.cache_put(&original_ua, CacheDecision::Modify);
 
             logger::log(
                 logger::Level::Debug,
-                &format!("UA modified: {} -> {}", original_ua, new_ua)
+                &format!("UA modified: {} -> {}", original_ua, self.config.user_agent)
             );
         } else {
-            // 不需要修改，更新缓存记录
-            self.cache_put(original_ua.clone(), "PASS".to_string());
+            self.cache_put(&original_ua, CacheDecision::Pass);
         }
 
         Ok(req)

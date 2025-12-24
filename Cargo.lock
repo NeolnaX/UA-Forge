@@ -694,6 +694,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "lru",
+ "parking_lot",
  "regex",
  "scopeguard",
  "tokio",
