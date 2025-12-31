@@ -1,0 +1,11 @@
+{
+  "luci-app-uaforge": {
+    "description": "Grant access to UAForge LuCI app",
+    "read": {
+      "uci": [ "uaforge", "firewall" ]
+    },
+    "write": {
+      "uci": [ "uaforge", "firewall" ]
+    }
+  }
+}

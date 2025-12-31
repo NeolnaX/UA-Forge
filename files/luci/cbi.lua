@@ -8,13 +8,58 @@ local INIT_SCRIPT = "/etc/init.d/" .. SERVICE_NAME
 local BIN_PATH = "/usr/bin/" .. SERVICE_NAME
 local stats_file = "/tmp/uaforge.stats"
 
+-- Cache for reducing fork overhead
+local cache = {
+    version = nil,
+    version_time = 0,
+    running = nil,
+    running_time = 0
+}
+local CACHE_TTL = 3  -- seconds
+
 local function is_running()
-    return (luci_sys.call("pidof " .. SERVICE_NAME .. " >/dev/null 2>&1") == 0)
+    local now = os.time()
+    if cache.running ~= nil and (now - cache.running_time) < CACHE_TTL then
+        return cache.running
+    end
+
+    -- Use /proc instead of pidof to avoid fork
+    local pid_dir = nixio.fs.dir("/proc")
+    if pid_dir then
+        for pid in pid_dir do
+            if pid:match("^%d+$") then
+                local cmdline_file = "/proc/" .. pid .. "/cmdline"
+                local f = io.open(cmdline_file, "r")
+                if f then
+                    local cmdline = f:read("*a")
+                    f:close()
+                    if cmdline and cmdline:match(SERVICE_NAME) then
+                        cache.running = true
+                        cache.running_time = now
+                        return true
+                    end
+                end
+            end
+        end
+    end
+
+    cache.running = false
+    cache.running_time = now
+    return false
 end
 
 local function get_version()
+    local now = os.time()
+    if cache.version and (now - cache.version_time) < 60 then
+        return cache.version
+    end
+
     local out = luci_sys.exec(BIN_PATH .. " --version 2>/dev/null")
-    return out:match("version:%s+([%w%._-]+)") or out:match("([%d%.]+)") or "unknown"
+    local version = out:match("version:%s+([%w%._-]+)") or out:match("([%d%.]+)") or "unknown"
+
+    cache.version = version
+    cache.version_time = now
+    return version
 end
 
 local function get_stats()
@@ -192,6 +237,7 @@ Firewall_drop_on_match.description = "启用后，当流量匹配 UA 白名单�
 
 proxy_host = main:taboption("network", Flag, "proxy_host", "代理主机流量")
 proxy_host.description = "启用后将代理主机自身的流量。如果需要尽量避免和其他代理冲突，请禁用此选项。"
+proxy_host.default = 0
 
 bypass_gid = main:taboption("network", Value, "bypass_gid", "绕过 GID")
 bypass_gid:depends("proxy_host", "1")
@@ -199,17 +245,26 @@ bypass_gid.default = "65533"
 bypass_gid.datatype = "uinteger"
 bypass_gid.description = "用于绕过 TPROXY 自身流量的 GID。"
 
+-- 高级网络选项（默认隐藏）
+show_advanced_network = main:taboption("network", Flag, "show_advanced_network", "显示高级网络选项")
+show_advanced_network.description = "显示绕过端口和 IP 等高级选项（大多数用户不需要修改）"
+show_advanced_network.default = 0
+
 bypass_ports = main:taboption("network", Value, "bypass_ports", "绕过目标端口")
+bypass_ports:depends("show_advanced_network", "1")
 bypass_ports.placeholder = "22 443"
 bypass_ports.description = "豁免的目标端口，用空格分隔（如：22 443）。"
 
 bypass_ips = main:taboption("network", Value, "bypass_ips", "绕过目标 IP")
+bypass_ips:depends("show_advanced_network", "1")
 bypass_ips.default = "172.16.0.0/12 192.168.0.0/16 127.0.0.0/8 169.254.0.0/16"
 bypass_ips.description = "豁免的目标 IP/CIDR 列表，用空格分隔。"
 
 -- === Tab 3: 高级设置（防火墙高级设置）===
-firewall_advanced_settings = main:taboption("advanced", Flag, "firewall_advanced_settings", "决策器设置")
-firewall_advanced_settings.description = "启用后，您可以自定义流量卸载中决策器的参数"
+-- 注意：高级设置仅在启用流量卸载时显示
+firewall_advanced_settings = main:taboption("advanced", Flag, "firewall_advanced_settings", "显示决策器高级参数")
+firewall_advanced_settings:depends("enable_firewall_set", "1")
+firewall_advanced_settings.description = "启用后，您可以自定义流量卸载中决策器的参数（大多数用户使用默认值即可）"
 
 firewall_nonhttp_threshold = main:taboption("advanced", Value, "firewall_nonhttp_threshold", "非 HTTP 判定阈值")
 firewall_nonhttp_threshold:depends("firewall_advanced_settings", "1")
@@ -244,6 +299,25 @@ log_file = main:taboption("softlog", Value, "log_file", "应用日志路径")
 log_file.placeholder = "/tmp/uaforge/uaforge.log"
 log_file.description = "指定 Rust 程序运行时日志的输出文件路径。留空将禁用文件日志。"
 
+-- Helper function to read last N lines without fork
+local function read_last_lines(filepath, max_lines)
+    local f = io.open(filepath, "r")
+    if not f then
+        return "（无法读取日志文件）"
+    end
+
+    local lines = {}
+    for line in f:lines() do
+        table.insert(lines, line)
+        if #lines > max_lines then
+            table.remove(lines, 1)
+        end
+    end
+    f:close()
+
+    return table.concat(lines, "\n")
+end
+
 softlog = main:taboption("softlog", TextValue, "log_display","")
 softlog.readonly = true
 softlog.rows = 30
@@ -252,7 +326,7 @@ softlog.cfgvalue = function(self, section)
     if not log_file_path or log_file_path == "" then
         return "（未配置应用日志文件路径）"
     end
-    return luci.sys.exec("tail -n 200 \"" .. log_file_path .. "\" 2>/dev/null")
+    return read_last_lines(log_file_path, 200)
 end
 
 local clear_btn = main:taboption("softlog", Button, "clear_log", "清空应用日志")

@@ -21,6 +21,15 @@ CHAIN_OUTPUT="uaforge_output"
 
 IPSET_NAME="uaforge_bypass_set"
 
+# --- 常量定义 ---
+readonly DEFAULT_PORT="12032"
+readonly DEFAULT_UA="FFF"
+readonly DEFAULT_LOG_LEVEL="info"
+readonly DEFAULT_BYPASS_GID="65533"
+readonly OPENCLASH_GID="65534"
+readonly NFT_SET_TIMEOUT="10m"
+readonly MAX_NOFILE="65536"
+
 # --- 防火墙检测 ---
 FW_TYPE=""
 
@@ -35,13 +44,33 @@ detect_firewall() {
 # 脚本加载时执行防火墙检测
 detect_firewall
 
+# --- 通用辅助函数 ---
+
+# 格式化列表为 nftables 格式
+format_nft_list() {
+    local list="$1"
+    [ -z "$list" ] && return
+    echo "{ $(echo "$list" | sed -e 's/ /, /g') }"
+}
+
+# 格式化接口列表为 nftables 格式
+format_nft_ifaces() {
+    local iface_list="$1"
+    set -- $iface_list
+    if [ "$#" -eq 1 ]; then
+        echo "\"$1\""
+    else
+        echo "{ $(echo "$iface_list" | sed -e 's/ /", "/g' -e 's/^/"/' -e 's/$/"/') }"
+    fi
+}
+
 # NFTABLES (fw4) 函数
 
 # 仅清理规则和 uci，不重载 (NFT helper)
 unset_firewall_rules_nft() {
     rm -f "${NFT_PATH}" # 清理生成的规则文件
-    uci -q delete firewall.${FW_CONFIG_NAME}
-    uci commit firewall
+    # Note: UCI firewall config should be set at install time, not runtime
+    # We only clean up the generated nft rules file here
 }
 
 # 清理防火墙规则并重载 (NFT)
@@ -57,7 +86,7 @@ unset_firewall_nft() {
 
 # 自动管理防火墙规则 (NFT)
 set_firewall_nft() {
-    # 1. 确保旧规则被彻底清除
+    # 1. 清理旧的临时规则文件
     unset_firewall_rules_nft
 
     # 2. 从 UCI 读取配置
@@ -71,9 +100,9 @@ set_firewall_nft() {
     local proxy_host
     local enable_firewall_set
 
-    config_get port "main" "port" "12032"
+    config_get port "main" "port" "$DEFAULT_PORT"
     config_get iface_list "main" "iface" "br-lan"
-    config_get bypass_gid "main" "bypass_gid" "65533"
+    config_get bypass_gid "main" "bypass_gid" "$DEFAULT_BYPASS_GID"
     config_get bypass_ports_list "main" "bypass_ports" ""
     config_get bypass_ips_list "main" "bypass_ips" ""
     config_get_bool proxy_host "main" "proxy_host" ""
@@ -81,18 +110,13 @@ set_firewall_nft() {
 
     # 3. 格式化接口
     local nft_ifaces
-    set -- $iface_list
-    if [ "$#" -eq 1 ]; then
-        nft_ifaces="\"$1\"" # 单个接口
-    else
-        nft_ifaces="{ $(echo "$iface_list" | sed -e 's/ /", "/g' -e 's/^/"/' -e 's/$/"/') }" # 多个接口
-    fi
+    nft_ifaces=$(format_nft_ifaces "$iface_list")
 
     # 4. 格式化豁免 IPs
     local nft_ips_rule
     if [ -n "$bypass_ips_list" ]; then
         local nft_ips
-        nft_ips="{ $(echo "$bypass_ips_list" | sed -e 's/ /, /g') }"
+        nft_ips=$(format_nft_list "$bypass_ips_list")
         nft_ips_rule="ip daddr != $nft_ips \\"
     else
         nft_ips_rule="# No bypass IPs configured"
@@ -102,7 +126,7 @@ set_firewall_nft() {
     local nft_ports_rule
     if [ -n "$bypass_ports_list" ]; then
         local nft_ports
-        nft_ports="{ $(echo "$bypass_ports_list" | sed -e 's/ /, /g') }"
+        nft_ports=$(format_nft_list "$bypass_ports_list")
         nft_ports_rule="tcp dport != $nft_ports \\"
     else
         nft_ports_rule="# No bypass ports configured"
@@ -116,7 +140,7 @@ set_firewall_nft() {
 
     if [ "$enable_firewall_set" = "1" ]; then
         logger -t "$NAME" "Ensuring nftables set '${IPSET_NAME}' exists..."
-        nft add set inet fw4 ${IPSET_NAME} "{ type ipv4_addr . inet_service ; timeout 10m ;}"
+        nft add set inet fw4 ${IPSET_NAME} "{ type ipv4_addr . inet_service ; timeout $NFT_SET_TIMEOUT ;}"
         if [ $? -ne 0 ]; then
              logger -t "$NAME" "Error: Failed to create nftables set '${IPSET_NAME}'. Domain bypass disabled."
              enable_firewall_set="0"
@@ -152,8 +176,8 @@ chain uaforge_output_after {
     # 豁免端口
     $nft_ports_rule
     # 豁免 uaforge 自己的流量
-    # 同时豁免 OpenClash 的流量 (GID 65534)，防止循环
-    meta skgid != { $bypass_gid, 65534 } \\
+    # 同时豁免 OpenClash 的流量 (GID $OPENCLASH_GID)，防止循环
+    meta skgid != { $bypass_gid, $OPENCLASH_GID } \\
     redirect to :$port
 }
 
@@ -163,12 +187,7 @@ EOF
         logger -t "$NAME" "proxy_host is disabled. Skipping uaforge_output_after chain."
     fi
     logger -t "$NAME" "Generated nftables rules at ${NFT_PATH}"
-    # 7. 注册防火墙规则
-    uci set firewall.${FW_CONFIG_NAME}="include"
-    uci set firewall.${FW_CONFIG_NAME}.type="nftables"
-    uci set firewall.${FW_CONFIG_NAME}.path="${NFT_PATH}"
-    uci set firewall.${FW_CONFIG_NAME}.enabled="1"
-    uci commit firewall
+    # 7. Reload firewall to apply the rules (UCI config should be set at install time)
     nft delete chain inet fw4 uaforge_prerouting_before 2>/dev/null || true
     nft delete chain inet fw4 uaforge_output_after 2>/dev/null || true
     fw4 reload >/dev/null 2>&1
@@ -213,9 +232,9 @@ set_firewall_ipt() {
     local proxy_host
     local enable_firewall_set
 
-    config_get port "main" "port" "12032"
+    config_get port "main" "port" "$DEFAULT_PORT"
     config_get iface_list "main" "iface" "br-lan"
-    config_get bypass_gid "main" "bypass_gid" "65533"
+    config_get bypass_gid "main" "bypass_gid" "$DEFAULT_BYPASS_GID"
     config_get bypass_ports_list "main" "bypass_ports" ""
     config_get bypass_ips_list "main" "bypass_ips" ""
     config_get_bool proxy_host "main" "proxy_host" ""
@@ -312,14 +331,16 @@ unset_firewall() {
 
 # 通用服务函数 (启动、停止、组设置)
 
-# 检查并创建专用组
+# Note: Group creation should be handled at package install time (postinst/uci-defaults)
+# This function is kept for reference but should not write to /etc/group at runtime
 setup_group() {
     config_load "$CONFIG_NAME"
     local bypass_gid
-    config_get bypass_gid "main" "bypass_gid" "65533"
+    config_get bypass_gid "main" "bypass_gid" "$DEFAULT_BYPASS_GID"
 
+    # Verify group exists but don't create it at runtime
     if ! grep -q ":$bypass_gid:" /etc/group; then
-        echo "uaforge:x:$bypass_gid:" >> /etc/group
+        logger -t "$NAME" "Warning: Group with GID $bypass_gid not found. Please create it at install time."
     fi
 }
 
@@ -342,9 +363,9 @@ start_service() {
     fi
 
     local port ua log_level log_file whitelist
-    config_get port "main" "port" "12032"
-    config_get ua "main" "ua" "FFF"
-    config_get log_level "main" "log_level" "info"
+    config_get port "main" "port" "$DEFAULT_PORT"
+    config_get ua "main" "ua" "$DEFAULT_UA"
+    config_get log_level "main" "log_level" "$DEFAULT_LOG_LEVEL"
     config_get log_file "main" "log_file" "/tmp/uaforge/uaforge.log"
     config_get whitelist "main" "whitelist" ""
 
@@ -359,13 +380,19 @@ start_service() {
 
     procd_open_instance "$NAME"
     procd_set_param command "$PROG"
-    procd_set_param limits nofile="65536 65536"
+    procd_set_param limits nofile="$MAX_NOFILE $MAX_NOFILE"
 
     #  使用 append_param 逐个添加参数
     if [ "$proxy_host" = "1" ]; then
         # 仅当 proxy_host 启用时，才以特定组运行
-        procd_set_param group "uaforge"
-        logger -t "$NAME" "Running as group 'uaforge' for host proxying."
+        # 检查组是否存在，避免 procd 启动失败
+        if grep -q "^uaforge:" /etc/group 2>/dev/null; then
+            procd_set_param group "uaforge"
+            logger -t "$NAME" "Running as group 'uaforge' for host proxying."
+        else
+            logger -t "$NAME" "Warning: uaforge group not found, running as default user."
+            logger -t "$NAME" "Please reinstall package or run: echo 'uaforge:x:65533:' >> /etc/group"
+        fi
     else
         logger -t "$NAME" "Running as default user (proxy_host is disabled)."
     fi
@@ -497,6 +524,12 @@ stop_service() {
     # procd 会自动使用 pidfile 停止 start-stop-daemon
 }
 
+reload_service() {
+    logger -t "$NAME" "Reloading $NAME..."
+    stop
+    start
+}
+
 service_triggers() {
-    procd_add_reload_trigger "$NAME"
+    procd_add_reload_trigger "uaforge"
 }

@@ -14,26 +14,26 @@ use crate::handler::HttpHandler;
 use crate::stats::Stats;
 use crate::logger;
 use crate::tproxy;
-use crate::pool::Connector;
+
+// 常量定义
+const MAX_CONCURRENT_CONNECTIONS: usize = 10000;
+const PEEK_BUFFER_SIZE: usize = 8;
 
 pub struct Server {
     config: Config,
     handler: Arc<HttpHandler>,
     stats: Arc<Stats>,
-    connector: Arc<Connector>,
     conn_limit: Arc<Semaphore>,
 }
 
 impl Server {
     pub fn new(config: Config, handler: Arc<HttpHandler>, stats: Arc<Stats>) -> Self {
-        let connector = Arc::new(Connector::new());
         // 限制最大并发连接数，防止 DoS 资源耗尽
-        let conn_limit = Arc::new(Semaphore::new(10000));
+        let conn_limit = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
         Self {
             config,
             handler,
             stats,
-            connector,
             conn_limit,
         }
     }
@@ -62,12 +62,11 @@ impl Server {
 
             let handler = self.handler.clone();
             let stats = self.stats.clone();
-            let connector = self.connector.clone();
 
             // 为每个连接生成一个异步任务
             tokio::spawn(async move {
                 let _permit = permit; // 持有 permit 直到连接结束
-                if let Err(e) = handle_connection(stream, handler, stats, connector).await {
+                if let Err(e) = handle_connection(stream, handler, stats).await {
                     logger::log(
                         logger::Level::Debug,
                         format_args!("connection error: {:?}", e)
@@ -83,10 +82,9 @@ async fn handle_connection(
     mut client: TcpStream,
     handler: Arc<HttpHandler>,
     stats: Arc<Stats>,
-    connector: Arc<Connector>,
 ) -> Result<(), std::io::Error> {
-    stats.add_active(1);
-    let _guard = scopeguard::guard((), |_| stats.add_active(-1));
+    stats.inc_active();
+    let _guard = scopeguard::guard((), |_| stats.dec_active());
 
     // 获取原始目标地址
     let orig_dst = tproxy::original_dst_tokio(&client)?;
@@ -99,7 +97,7 @@ async fn handle_connection(
     );
 
     // Peek 前几个字节检测是否是 HTTP
-    let mut peek_buf = [0u8; 8];
+    let mut peek_buf = [0u8; PEEK_BUFFER_SIZE];
     client.peek(&mut peek_buf).await?;
 
     let is_http = is_http_request(&peek_buf);
@@ -120,7 +118,7 @@ async fn handle_connection(
     }
 
     // HTTP 流量，使用 hyper 处理
-    process_http(client, handler, dest_ip, dest_port, connector).await
+    process_http(client, handler, dest_ip, dest_port).await
 }
 
 /// 使用 hyper 处理 HTTP 请求
@@ -129,7 +127,6 @@ async fn process_http(
     handler: Arc<HttpHandler>,
     dest_ip: std::net::IpAddr,
     dest_port: u16,
-    connector: Arc<Connector>,
 ) -> Result<(), std::io::Error> {
     // 使用 TokioIo 包装客户端连接
     let client_io = TokioIo::new(client);
@@ -139,7 +136,6 @@ async fn process_http(
 
     let service = service_fn(move |req: Request<Incoming>| {
         let handler = handler.clone();
-        let connector = connector.clone();
         async move {
             // 修改请求
             let modified_req = match handler.modify_request(req, dest_ip, dest_port).await {
@@ -149,19 +145,24 @@ async fn process_http(
                 }
             };
 
-            // 创建新连接（每请求新建，确保 HTTP/1.1 协议正确性）
-            // HTTP/1.1 要求响应 body 完全消费后才能复用连接，但 hyper 的 Response
-            // 是流式的，提前回收会导致"前一个响应未读完就发送下一个请求"
-            let mut sender = connector.create_connection(dest_addr)
+            // 直接创建新连接（每请求新建，确保 HTTP/1.1 协议正确性）
+            let stream = TcpStream::connect(dest_addr).await?;
+            let io = TokioIo::new(stream);
+
+            let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
                 .await
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+
+            // 在后台运行连接
+            tokio::spawn(async move {
+                let _ = conn.await;
+            });
 
             // 转发请求到真实服务器
             let response = sender.send_request(modified_req)
                 .await
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
 
-            // 连接在 response 消费完后自动关闭（不复用）
             Ok::<_, std::io::Error>(response)
         }
     });

@@ -78,6 +78,12 @@ define Package/uaforge/install
 	$(INSTALL_DIR) $(1)/etc/config/
 	$(INSTALL_CONF) ./files/uaforge.uci $(1)/etc/config/uaforge
 
+	$(INSTALL_DIR) $(1)/etc/uci-defaults/
+	$(INSTALL_BIN) ./files/uaforge.defaults $(1)/etc/uci-defaults/99-uaforge
+
+	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d/
+	$(INSTALL_CONF) ./files/luci-app-uaforge.json $(1)/usr/share/rpcd/acl.d/luci-app-uaforge.json
+
 	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/model/cbi/
 	$(INSTALL_CONF) ./files/luci/cbi.lua $(1)/usr/lib/lua/luci/model/cbi/uaforge.lua
 

@@ -32,14 +32,12 @@ impl Stats {
         }
     }
 
-    pub fn add_active(&self, delta: i64) {
-        if delta >= 0 {
-            self.active_connections
-                .fetch_add(delta as usize, Ordering::Relaxed);
-        } else {
-            self.active_connections
-                .fetch_sub((-delta) as usize, Ordering::Relaxed);
-        }
+    pub fn inc_active(&self) {
+        self.active_connections.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn dec_active(&self) {
+        self.active_connections.fetch_sub(1, Ordering::Relaxed);
     }
 
     pub fn inc_http_requests(&self) {

@@ -16,16 +16,18 @@ pub struct HttpHandler {
     config: Config,
     stats: Arc<Stats>,
     fw: Arc<FirewallManager>,
-    cache: Arc<Mutex<Cache>>,
-    cache_enabled: bool,
+    cache: Option<Arc<Mutex<Cache>>>,
     regex_cache: Option<Regex>,
     user_agent_header: HeaderValue,
 }
 
 impl HttpHandler {
     pub fn new(config: Config, stats: Arc<Stats>, fw: Arc<FirewallManager>) -> Result<Self, String> {
-        let cache_enabled = config.cache_size > 0;
-        let cache = Arc::new(Mutex::new(Cache::new(config.cache_size)));
+        let cache = if config.cache_size > 0 {
+            Some(Arc::new(Mutex::new(Cache::new(config.cache_size))))
+        } else {
+            None
+        };
 
         // Pre-compile regex if in Regex mode - fail fast on invalid pattern
         let regex_cache = if let crate::config::MatchMode::Regex { pattern, .. } = &config.match_mode {
@@ -43,27 +45,19 @@ impl HttpHandler {
         let user_agent_header = HeaderValue::from_str(&config.user_agent)
             .unwrap_or_else(|_| HeaderValue::from_static("UAForge"));
 
-        Ok(Self { config, stats, fw, cache, cache_enabled, regex_cache, user_agent_header })
+        Ok(Self { config, stats, fw, cache, regex_cache, user_agent_header })
     }
 
     /// 从缓存中获取值
     fn cache_get(&self, key: &str) -> Option<CacheDecision> {
-        // Fast path: 如果缓存禁用，直接返回，避免锁竞争
-        if !self.cache_enabled {
-            return None;
-        }
-        let mut cache = self.cache.lock();
-        cache.get(key)
+        self.cache.as_ref()?.lock().get(key)
     }
 
     /// 向缓存中写入值
     fn cache_put(&self, key: &str, value: CacheDecision) {
-        // Fast path: 如果缓存禁用，直接返回，避免锁竞争
-        if !self.cache_enabled {
-            return;
+        if let Some(cache) = &self.cache {
+            cache.lock().put(key.to_string(), value);
         }
-        let mut cache = self.cache.lock();
-        cache.put(key.to_string(), value);
     }
 
     /// 判断 UA 是否需要修改（规则匹配）
@@ -71,22 +65,9 @@ impl HttpHandler {
         use crate::config::MatchMode;
 
         match &self.config.match_mode {
-            MatchMode::Force => {
-                // 强制修改所有 UA
-                true
-            }
-            MatchMode::Keywords(keywords) => {
-                // 检查 UA 是否包含任意关键词
-                keywords.iter().any(|kw| ua.contains(kw.as_str()))
-            }
-            MatchMode::Regex { .. } => {
-                // Use pre-compiled regex
-                if let Some(ref re) = self.regex_cache {
-                    re.is_match(ua)
-                } else {
-                    false
-                }
-            }
+            MatchMode::Force => true,
+            MatchMode::Keywords(keywords) => keywords.iter().any(|kw| ua.contains(kw.as_str())),
+            MatchMode::Regex { .. } => self.regex_cache.as_ref().map_or(false, |re| re.is_match(ua)),
         }
     }
 
@@ -127,7 +108,7 @@ impl HttpHandler {
         }
 
         // 2. 检查防火墙 UA 白名单（次优先级 - 卸载到防火墙）
-        if self.fw.enabled() && !self.config.firewall.fw_ua_whitelist.is_empty() {
+        if self.fw.enabled() && !self.config.firewall.fw_ua_w.is_empty() {
             // 先检查缓存，避免重复添加防火墙规则
             if let Some(cached) = self.cache_get(&original_ua) {
                 if cached == CacheDecision::FwWhitelist {
@@ -136,7 +117,7 @@ impl HttpHandler {
             }
 
             // 检查是否在白名单中
-            for keyword in &self.config.firewall.fw_ua_whitelist {
+            for keyword in &self.config.firewall.fw_ua_w {
                 if original_ua.contains(keyword.as_str()) {
                     logger::log(
                         logger::Level::Info,

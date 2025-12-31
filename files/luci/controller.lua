@@ -1,5 +1,7 @@
 module("luci.controller.uaforge", package.seeall)
 
 function index()
-    entry({"admin", "services", "uaforge"}, cbi("uaforge"), "UAForge", 1)
+	local e = entry({ "admin", "services", "uaforge" }, cbi("uaforge"), "UAForge", 90)
+	e.dependent = true
+	e.acl_depends = { "luci-app-uaforge" }
 end

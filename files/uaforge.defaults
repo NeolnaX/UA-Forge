@@ -1,0 +1,44 @@
+#!/bin/sh
+# This script runs once at package installation to set up firewall include
+# It will be automatically deleted after successful execution
+
+NAME="uaforge"
+NFT_PATH="/tmp/uaforge_rules.nft"
+
+# Create firewall include for nftables rules (one-time setup)
+if ! uci -q get firewall.${NAME} >/dev/null; then
+    logger -t "$NAME" "Setting up firewall include (one-time)..."
+
+    uci set firewall.${NAME}="include"
+    uci set firewall.${NAME}.type="nftables"
+    uci set firewall.${NAME}.path="${NFT_PATH}"
+    uci set firewall.${NAME}.enabled="1"
+    uci commit firewall
+
+    logger -t "$NAME" "Firewall include configured."
+else
+    logger -t "$NAME" "Firewall include already exists, skipping."
+fi
+
+# Create uaforge group if it doesn't exist (using addgroup for proper system integration)
+BYPASS_GID=65533
+if ! getent group uaforge >/dev/null 2>&1; then
+    logger -t "$NAME" "Creating uaforge group with GID ${BYPASS_GID}..."
+
+    # Try addgroup first (busybox standard), fallback to groupadd, then manual
+    if command -v addgroup >/dev/null 2>&1; then
+        addgroup -g ${BYPASS_GID} -S uaforge 2>/dev/null || \
+        addgroup -g ${BYPASS_GID} uaforge 2>/dev/null
+    elif command -v groupadd >/dev/null 2>&1; then
+        groupadd -g ${BYPASS_GID} -r uaforge 2>/dev/null
+    else
+        # Fallback to manual creation only if no system tools available
+        echo "uaforge:x:${BYPASS_GID}:" >> /etc/group
+    fi
+
+    logger -t "$NAME" "Group created."
+else
+    logger -t "$NAME" "Group 'uaforge' already exists."
+fi
+
+exit 0

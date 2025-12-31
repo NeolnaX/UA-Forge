@@ -9,6 +9,11 @@ use std::time::{Duration, Instant};
 use crate::config::FirewallConfig;
 use crate::logger;
 
+// 常量定义
+const CLEANUP_INTERVAL_SECS: u64 = 10 * 60; // 10 分钟
+const BATCH_FLUSH_DELAY_MS: u64 = 100;
+const BATCH_SIZE_THRESHOLD: usize = 200;
+
 #[derive(Clone)]
 pub struct FirewallManager {
     inner: Arc<Inner>,
@@ -65,9 +70,7 @@ impl FirewallManager {
     }
 
     pub fn enabled(&self) -> bool {
-        self.inner.config.enable_firewall_set
-            && self.inner.config.fw_set_name.as_deref().unwrap_or("").len() > 0
-            && self.inner.config.fw_type.as_deref().unwrap_or("").len() > 0
+        self.inner.config.enable_firewall_set()
     }
 
     pub fn report_http(&self, ip: IpAddr, port: u16) {
@@ -118,7 +121,7 @@ fn worker(fw_config: FirewallConfig, rx: mpsc::Receiver<Event>) {
     let mut batch: HashMap<(IpAddr, u16), u32> = HashMap::new();
     let mut batch_deadline: Option<Instant> = None;
 
-    let cleanup_interval = Duration::from_secs(10 * 60);
+    let cleanup_interval = Duration::from_secs(CLEANUP_INTERVAL_SECS);
     let mut cleanup_deadline = Instant::now() + cleanup_interval;
 
     loop {
@@ -138,9 +141,9 @@ fn worker(fw_config: FirewallConfig, rx: mpsc::Receiver<Event>) {
                 Event::Add { ip, port, timeout } => {
                     batch.insert((ip, port), timeout);
                     if batch_deadline.is_none() {
-                        batch_deadline = Some(now + Duration::from_millis(100));
+                        batch_deadline = Some(now + Duration::from_millis(BATCH_FLUSH_DELAY_MS));
                     }
-                    if batch.len() >= 200 {
+                    if batch.len() >= BATCH_SIZE_THRESHOLD {
                         flush_batch(&fw_config, &mut batch);
                         batch_deadline = None;
                     }
@@ -156,7 +159,7 @@ fn worker(fw_config: FirewallConfig, rx: mpsc::Receiver<Event>) {
                     }
 
                     p.non_http_score = 0;
-                    p.http_lock_expires = Some(now + fw_config.fw_http_cooldown);
+                    p.http_lock_expires = Some(now + fw_config.get_http_cooldown());
                     p.decision_deadline = None;
                     p.last_event = now;
                 }
@@ -176,7 +179,7 @@ fn worker(fw_config: FirewallConfig, rx: mpsc::Receiver<Event>) {
 
                     if p.non_http_score >= fw_config.fw_nonhttp_threshold {
                         if p.decision_deadline.is_none() {
-                            p.decision_deadline = Some(now + fw_config.fw_decision_delay);
+                            p.decision_deadline = Some(now + fw_config.get_decision_delay());
                         }
                     }
                 }
@@ -238,7 +241,7 @@ fn finalize_decisions(
         profiles.remove(&k);
         batch.insert(k, fw_config.fw_timeout);
         if batch_deadline.is_none() {
-            *batch_deadline = Some(Instant::now() + Duration::from_millis(100));
+            *batch_deadline = Some(Instant::now() + Duration::from_millis(BATCH_FLUSH_DELAY_MS));
         }
     }
 }
@@ -292,7 +295,7 @@ fn flush_batch(fw_config: &FirewallConfig, batch: &mut HashMap<(IpAddr, u16), u3
 fn flush_ipset(set_name: &str, items: &[(IpAddr, u16, u32)]) -> std::io::Result<()> {
     let mut stdin = String::new();
     for (ip, port, timeout) in items {
-        if timeout > &0 {
+        if *timeout > 0 {
             stdin.push_str(&format!(
                 "add {set_name} {ip},{port} timeout {timeout} -exist\n"
             ));

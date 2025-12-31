@@ -3,7 +3,6 @@ mod firewall;
 mod handler;
 mod lru;
 mod logger;
-mod pool;
 mod server;
 mod stats;
 mod tproxy;

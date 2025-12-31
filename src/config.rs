@@ -1,34 +1,53 @@
-use clap::Parser;
+use clap::{Parser, Args};
 use std::time::Duration;
 
-#[derive(Clone, Debug)]
+// 默认值常量
+const DEFAULT_DECISION_DELAY_SECS: u64 = 60;
+const DEFAULT_HTTP_COOLDOWN_SECS: u64 = 3600;
+const DEFAULT_REGEX_PATTERN: &str = "(iPhone|iPad|Android|Macintosh|Windows|Linux|Apple|Mac OS X|Mobile)";
+
+#[derive(Clone, Debug, Args)]
 pub struct FirewallConfig {
-    pub enable_firewall_set: bool,
+    #[arg(long, help = "Firewall type (ipset/nft)")]
     pub fw_type: Option<String>,
+
+    #[arg(long, help = "Firewall set name")]
     pub fw_set_name: Option<String>,
+
+    #[arg(long, help = "Drop connections on firewall whitelist hit")]
     pub fw_drop: bool,
-    pub fw_ua_whitelist: Vec<String>,
+
+    #[arg(long, value_delimiter = ',', help = "Firewall UA whitelist (comma-separated)")]
+    pub fw_ua_w: Vec<String>,
+
+    #[arg(long, help = "Enable firewall bypass for non-HTTP traffic")]
     pub fw_bypass: bool,
+
+    #[arg(long, default_value = "5", help = "Non-HTTP threshold for firewall")]
     pub fw_nonhttp_threshold: u32,
+
+    #[arg(long, default_value = "28800", help = "Firewall timeout in seconds")]
     pub fw_timeout: u32,
-    pub fw_decision_delay: Duration,
-    pub fw_http_cooldown: Duration,
+
+    #[arg(long, value_parser = parse_duration, help = "Firewall decision delay (e.g., 60s, 1m)")]
+    pub fw_decision_delay: Option<Duration>,
+
+    #[arg(long, value_parser = parse_duration, help = "Firewall HTTP cooldown (e.g., 1h, 60m)")]
+    pub fw_http_cooldown: Option<Duration>,
 }
 
-impl Default for FirewallConfig {
-    fn default() -> Self {
-        Self {
-            enable_firewall_set: false,
-            fw_type: None,
-            fw_set_name: None,
-            fw_drop: false,
-            fw_ua_whitelist: Vec::new(),
-            fw_bypass: false,
-            fw_nonhttp_threshold: 5,
-            fw_timeout: 8 * 3600,
-            fw_decision_delay: Duration::from_secs(60),
-            fw_http_cooldown: Duration::from_secs(3600),
-        }
+impl FirewallConfig {
+    pub fn enable_firewall_set(&self) -> bool {
+        self.fw_type.as_ref().is_some_and(|s| !s.is_empty())
+            && self.fw_set_name.as_ref().is_some_and(|s| !s.is_empty())
+    }
+
+    pub fn get_decision_delay(&self) -> Duration {
+        self.fw_decision_delay.unwrap_or_else(|| Duration::from_secs(DEFAULT_DECISION_DELAY_SECS))
+    }
+
+    pub fn get_http_cooldown(&self) -> Duration {
+        self.fw_http_cooldown.unwrap_or_else(|| Duration::from_secs(DEFAULT_HTTP_COOLDOWN_SECS))
     }
 }
 
@@ -75,33 +94,8 @@ pub struct CliArgs {
     #[arg(long, help = "Enable regex mode")]
     pub enable_regex: bool,
 
-    // Firewall options
-    #[arg(long, help = "Firewall type (ipset/nft)")]
-    pub fw_type: Option<String>,
-
-    #[arg(long, help = "Firewall set name")]
-    pub fw_set_name: Option<String>,
-
-    #[arg(long, help = "Drop connections on firewall whitelist hit")]
-    pub fw_drop: bool,
-
-    #[arg(long, value_delimiter = ',', help = "Firewall UA whitelist (comma-separated)")]
-    pub fw_ua_w: Vec<String>,
-
-    #[arg(long, help = "Enable firewall bypass for non-HTTP traffic")]
-    pub fw_bypass: bool,
-
-    #[arg(long, default_value = "5", help = "Non-HTTP threshold for firewall")]
-    pub fw_nonhttp_threshold: u32,
-
-    #[arg(long, default_value = "28800", help = "Firewall timeout in seconds")]
-    pub fw_timeout: u32,
-
-    #[arg(long, value_parser = parse_duration, help = "Firewall decision delay (e.g., 60s, 1m)")]
-    pub fw_decision_delay: Option<Duration>,
-
-    #[arg(long, value_parser = parse_duration, help = "Firewall HTTP cooldown (e.g., 1h, 60m)")]
-    pub fw_http_cooldown: Option<Duration>,
+    #[command(flatten)]
+    pub firewall: FirewallConfig,
 }
 
 #[derive(Clone, Debug)]
@@ -158,39 +152,18 @@ impl Config {
         let match_mode = if cli.force {
             MatchMode::Force
         } else if cli.enable_regex {
-            let pattern = cli.regex_pattern.unwrap_or_else(|| {
-                "(iPhone|iPad|Android|Macintosh|Windows|Linux|Apple|Mac OS X|Mobile)".to_string()
-            });
+            let pattern = cli.regex_pattern.unwrap_or_else(|| DEFAULT_REGEX_PATTERN.to_string());
             MatchMode::Regex { pattern }
         } else {
-            let keywords = cli
+            let keywords: Vec<String> = cli
                 .keywords
                 .split(',')
-                .map(|s| s.trim())
+                .map(str::trim)
                 .filter(|s| !s.is_empty())
-                .map(|s| s.to_string())
+                .map(String::from)
                 .collect();
             MatchMode::Keywords(keywords)
         };
-
-        // Build firewall config
-        let mut firewall = FirewallConfig::default();
-        if cli.fw_type.is_some() || cli.fw_set_name.is_some() {
-            firewall.enable_firewall_set = true;
-            firewall.fw_type = cli.fw_type;
-            firewall.fw_set_name = cli.fw_set_name;
-        }
-        firewall.fw_drop = cli.fw_drop;
-        firewall.fw_ua_whitelist = cli.fw_ua_w;
-        firewall.fw_bypass = cli.fw_bypass;
-        firewall.fw_nonhttp_threshold = cli.fw_nonhttp_threshold;
-        firewall.fw_timeout = cli.fw_timeout;
-        if let Some(delay) = cli.fw_decision_delay {
-            firewall.fw_decision_delay = delay;
-        }
-        if let Some(cooldown) = cli.fw_http_cooldown {
-            firewall.fw_http_cooldown = cooldown;
-        }
 
         Ok(Self {
             user_agent: cli.user_agent,
@@ -201,7 +174,7 @@ impl Config {
             whitelist: cli.whitelist,
             cache_size: cli.cache_size,
             match_mode,
-            firewall,
+            firewall: cli.firewall,
         })
     }
 }
